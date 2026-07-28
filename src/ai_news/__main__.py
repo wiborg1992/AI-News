@@ -103,7 +103,8 @@ def main(argv: list[str] | None = None) -> int:
 
     print(
         f"Hentet: {stats.fetched} | nye: {stats.new_articles} | scoret: {stats.scored} "
-        f"| notificeret: {stats.notified} | udskudt (stille): {stats.skipped_quiet}"
+        f"| notificeret: {stats.notified} | filtreret fra: {stats.skipped_category} "
+        f"| udskudt (stille): {stats.skipped_quiet}"
     )
     if stats.errors:
         print(f"Fejl undervejs: {len(stats.errors)} (se log)", file=sys.stderr)

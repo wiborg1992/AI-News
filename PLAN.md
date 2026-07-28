@@ -61,14 +61,16 @@ Software der overvåger de største AI-nyhedskilder, krydstjekker historier på 
 | **Community/udvikler-signaler** | Hacker News (Algolia API, filtreret på AI-emner + points-tærskel), Reddit r/MachineLearning, r/LocalLLaMA, r/artificial (offentligt JSON-API) |
 | **Forskning (valgfrit, fase 3)** | arXiv cs.AI/cs.CL (kun papers med stort buzz andre steder) |
 
-### X (Twitter) og lignende
+### X (Twitter) og Bluesky — implementeret
 
-X's officielle API koster fra ~200 USD/md for læseadgang i praksis, og gratis-tier er reelt ubrugelig til overvågning. Strategi:
+X's officielle API koster fra ~200 USD/md for reel læseadgang. Det viste sig dog **ikke nødvendigt**: X-indhold hentes gratis via **nitter**-instanser, der udstiller enhver offentlig profil som RSS. Verificeret mod 15 AI-konti med aktuelt indhold.
 
-1. **Fase 1-2:** Fang X-signaler *indirekte* — når en tweet er vigtig, lander den på Hacker News, Reddit og i tech-medier inden for kort tid. Det dækker langt det meste uden API-omkostninger.
-2. **Fase 3 (valgfrit tilkøb):** X API Basic-abonnement med en kurateret liste af nøglepersoner (Sam Altman, Dario Amodei, Demis Hassabis, Yann LeCun, officielle firma-konti m.fl.). Alternativt Bluesky (gratis API), hvor mange AI-forskere også poster.
+- **16 kuraterede X-konti**: officielle firmakonti (OpenAI, OpenAIDevs, AnthropicAI, GoogleDeepMind, GoogleAI, AIatMeta, MistralAI, huggingface, nvidia) og nøglepersoner (sama, gdb, demishassabis, karpathy, alexalbert__, ylecun, _philschmid, swyx).
+- **Failover mellem instanser.** Nitter er uofficielt og kan blokeres af X uden varsel. Ved fejl prøves næste instans; fejler alle, logges en advarsel, og pipelinen kører videre uden X-signalet.
+- **Officielt API som opgradering.** Sættes `X_BEARER_TOKEN`, bruges X API v2 i stedet — samme kode, mere driftssikkert, betalt.
+- **Bluesky** (gratis officielt API) supplerer med de stemmer, der reelt er aktive der. Bemærk: de fleste AI-folk poster stadig primært på X — flere store konti er registrerede men tomme på Bluesky.
 
-Beslutningen om X-API tages først, når vi kan måle hvad den indirekte dækning misser.
+**Forfiltrering.** Sociale opslag er støjende. Retweets, svar og korte bemærkninger uden link eller nøgleord kasseres før scoring — ellers ville "congrats!" fylde pipelinen.
 
 ### Krydstjek-princip
 
@@ -90,12 +92,14 @@ Beslutningen om X-API tages først, når vi kan måle hvad den indirekte dæknin
 - Trin 2: embedding af titel+uddrag (Claude/Voyage embeddings eller lokal model) — cosinus-lighed over tærskel lægger artiklen i eksisterende klynge.
 - En klynge = én historie med N kilder. Klyngens "primære link" er førstehåndskilden hvis den findes, ellers det mest ansete medie.
 
-### 3.3 Væsentlighedsvurdering
+### 3.3 Væsentlighedsvurdering og kategorisortering
 - LLM-kald (Claude Haiku — billig og hurtig) pr. *ny eller opdateret klynge*, ikke pr. artikel.
 - Prompten scorer 0-10 på to akser:
   - **Banebrydende/branchechangende:** ny modelgeneration, større opkøb/partnerskab, regulering, sikkerhedshændelse, prisændring, åbning/lukning af API'er, open source-udgivelser af betydning.
   - **IT-relevans:** påvirker det softwareudvikling, drift/infrastruktur, sikkerhed, udviklerværktøjer eller IT-arbejdsmarkedet?
-- Kun klynger med samlet score over tærskel (konfigurerbar, start ~7) går videre. Alt logges, så tærsklen kan justeres ud fra hvad der (ikke) blev sendt.
+- **Kategorisering.** Hver klynge placeres i én af 12 kategorier (`model_launch`, `model_update`, `feature`, `open_source`, `pricing`, `infrastructure`, `security`, `regulation`, `business`, `research`, `industry`, `noise`).
+- **Tærskel pr. kategori** i stedet for én global. Modellanceringer og -opdateringer slipper igennem ved score 5; forskningspapers kræver 9; `noise` (holdninger, rygter, listicles, tutorials, marketing) blokeres helt uanset score. Prioriterede kategorier får desuden +1 i score.
+- Alt logges med score og kategori, så tærsklerne kan justeres ud fra hvad der (ikke) blev sendt.
 
 ### 3.4 Resumé og notifikation
 - LLM genererer notifikationen på dansk i fast format:
@@ -159,11 +163,12 @@ Beslutningen om X-API tages først, når vi kan måle hvad den indirekte dæknin
 - [x] Logning af alle scores til senere tærskel-tuning (gemmes i `clusters`-tabellen)
 - [ ] Sundhedstjek pr. kilde (alarm hvis en kilde er tavs >48 t)
 
-### Fase 3 — Bredere signaler
-- [ ] Bluesky-overvågning af nøglepersoner (gratis API)
-- [ ] Evaluering: misser vi noget, som kun var på X? → beslutning om X API Basic
+### Fase 3 — Bredere signaler (leveret)
+- [x] Bluesky-overvågning af nøglepersoner (gratis API)
+- [x] X-overvågning af 16 konti — gratis via nitter, uden betalt API
+- [x] Kategoribaseret sortering, så kun det relevante sendes
 - [ ] Evt. arXiv-integration (kun papers med community-buzz)
-- [ ] Ugentlig digest-mail/notifikation med overblik
+- [ ] Digest-tilstand: én samlet besked i stedet for én pr. nyhed
 
 ### Fase 4 — Finpudsning (efter behov)
 - [ ] Lille web-dashboard (historik, scores, hvad blev filtreret fra)
@@ -178,7 +183,8 @@ Beslutningen om X-API tages først, når vi kan måle hvad den indirekte dæknin
 |---|---|
 | Notifikationstræthed (for meget støj) | Høj start-tærskel, dagligt loft, feedback-loop i fase 4 |
 | Falske/overhypede historier | Krydstjek-kravet + kildevægtning; ubekræftet-mærkning |
-| X-indhold utilgængeligt uden dyrt API | Indirekte dækning via HN/Reddit/medier; Bluesky; målt beslutning i fase 3 |
+| Nitter blokeres af X (uofficiel adgang) | Failover mellem instanser; ved totalt udfald logges advarsel og pipelinen kører videre. Kan opgraderes til betalt X API ved at sætte `X_BEARER_TOKEN` — ingen kodeændring |
+| For meget støj i notifikationerne | Kategorifilter med tærskel pr. kategori; `noise` blokeres helt; dagligt loft |
 | Feeds ændrer format/dør | Sundhedstjek pr. kilde (alarm hvis en kilde er tavs >48 t) |
 | GitHub Actions cron-drift (5-15 min forsinkelse) | Acceptabelt i fase 1; flyt til VPS hvis det bliver et problem |
 | LLM-fejlvurdering af væsentlighed | Alle vurderinger logges; tærskel og prompt justeres på data |

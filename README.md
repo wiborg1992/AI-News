@@ -6,11 +6,27 @@ Se [PLAN.md](PLAN.md) for arkitektur og faseplan.
 
 ## Sådan virker det
 
-1. **Ingestion** — henter RSS-feeds (OpenAI, DeepMind, TechCrunch, TLDR AI m.fl.), Hacker News (Algolia API) og Reddit kl. 12 og 22 dansk tid.
+1. **Ingestion** — kl. 8, 12, 17 og 22 dansk tid hentes RSS-feeds (OpenAI, DeepMind, TechCrunch, TLDR AI m.fl.), Hacker News, Reddit, **X** (16 AI-konti) og **Bluesky**.
 2. **Dedup & klyngedannelse** — samme historie fra flere kilder samles i én klynge (URL-kanonisering + fuzzy titelmatch).
 3. **Krydstjek** — en klynge er *bekræftet* ved ≥2 uafhængige kilder eller en førstehåndskilde (firma-blog). Ellers markeres den "🔶 ubekræftet".
-4. **Scoring** — Claude Haiku scorer 0-10 på banebrydende + IT-relevans. Kun score ≥ 7 (konfigurerbart) går videre.
-5. **Notifikation** — Claude Sonnet skriver et dansk resumé (hvad/hvem/påvirkning + link), som pushes til telefonen. Max 8/dag, nattestille 23-07 (score 10 undtaget).
+4. **Scoring & kategorisering** — Claude Haiku scorer 0-10 og placerer historien i én af 12 kategorier (`model_launch`, `model_update`, `feature`, `noise` …). Kategorien afgør tærsklen — se [Sortering](#sortering-hvad-slipper-igennem).
+5. **Notifikation** — Claude Sonnet skriver et dansk resumé (hvad/hvem/påvirkning + link), som pushes til telefonen. Max 10/dag, nattestille 23-07 (score 10 undtaget).
+
+## Sortering: hvad slipper igennem
+
+Systemet sender ikke alt. Hver historie kategoriseres, og hver kategori har sin egen tærskel i [config.yaml](config.yaml) — så en modellancering slipper igennem tidligt, mens et forskningspaper skal være banebrydende:
+
+| Kategori | Tærskel | Hvad det dækker |
+|---|---|---|
+| `model_launch` | 5 | Ny model eller modelgeneration |
+| `model_update` | 5 | Opdatering af eksisterende model (fx Fable) |
+| `feature`, `open_source`, `pricing` | 6 | Nye funktioner, åbne vægte, prisændringer |
+| `security` | 7 | Sårbarheder, brud, AI-sikkerhed |
+| `infrastructure`, `regulation`, `business`, `industry` | 8 | Chips, lovgivning, opkøb, anden IT-nyhed |
+| `research` | 9 | Papers og benchmarks — kun hvis banebrydende |
+| `noise` | **blokeret** | Holdninger, rygter, listicles, tutorials, marketing |
+
+De fem første kategorier er markeret som `priority_categories` og får desuden +1 i score. Vil du have mere eller mindre igennem, justerer du `category_thresholds` — ikke den globale `notify_score`.
 
 Uden `ANTHROPIC_API_KEY` kører systemet i degraderet tilstand med heuristisk keyword-scoring.
 
@@ -66,13 +82,14 @@ export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/..."
 python -m ai_news test-notify
 ```
 
-### 2. GitHub Actions (kører automatisk kl. 12 og 22)
+### 2. GitHub Actions (kører automatisk kl. 8, 12, 17 og 22)
 
 Tilføj secrets under **Settings → Secrets and variables → Actions** — kun for den kanal du bruger:
 
 | Secret | Værdi |
 |---|---|
 | `ANTHROPIC_API_KEY` | API-nøgle fra [platform.claude.com](https://platform.claude.com) |
+| `X_BEARER_TOKEN` | *Valgfri.* Officielt X API (betalt). Uden den bruges gratis nitter |
 | `NTFY_TOPIC` | Dit ntfy-emnenavn *(hvis du bruger ntfy)* |
 | `NTFY_SERVER`, `NTFY_TOKEN` | Kun ved selv-hostet ntfy |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | *(hvis du bruger Telegram)* |
@@ -81,7 +98,7 @@ Tilføj secrets under **Settings → Secrets and variables → Actions** — kun
 
 Workflowet ([.github/workflows/aggregate.yml](.github/workflows/aggregate.yml)) kører derefter selv. Det kan også startes manuelt under **Actions → AI News Aggregator → Run workflow** (med valgfri dry-run) — manuelle kørsler ignorerer tidsplanen.
 
-**Om tidsplanen og sommertid.** GitHub Actions cron kører altid i UTC, mens Danmark skifter mellem UTC+2 og UTC+1. Workflowet vækkes derfor på fire UTC-tidspunkter (10, 11, 20, 21), og pipelinen tjekker selv den lokale time mod `schedule.run_hours` i `config.yaml`. De to "forkerte" vækninger afsluttes med det samme uden at hente noget, så du rammer 12:00 og 22:00 dansk tid præcist hele året — også hen over sommertidsskiftet.
+**Om tidsplanen og sommertid.** GitHub Actions cron kører altid i UTC, mens Danmark skifter mellem UTC+2 og UTC+1. Workflowet vækkes derfor på otte UTC-tidspunkter (6, 7, 10, 11, 15, 16, 20, 21), og pipelinen tjekker selv den lokale time mod `schedule.run_hours` i `config.yaml`. De fire "forkerte" vækninger afsluttes med det samme uden at hente noget, så du rammer 8, 12, 17 og 22 dansk tid præcist hele året — også hen over sommertidsskiftet.
 
 Vil du have andre tidspunkter, skal **begge** steder rettes: `run_hours` i `config.yaml` (lokale timer) og `cron` i workflowet (de tilsvarende UTC-timer, både sommer og vinter).
 
@@ -126,10 +143,10 @@ pytest
 src/ai_news/
 ├── config.py    # config.yaml + secrets fra miljø
 ├── db.py        # SQLite-skema (articles, clusters, notifications)
-├── ingest.py    # RSS + Hacker News + Reddit
+├── ingest.py    # RSS + Hacker News + Reddit + X (nitter/API) + Bluesky
 ├── dedup.py     # URL-kanonisering + fuzzy klyngedannelse
-├── llm.py       # Claude-scoring/resumé + heuristisk fallback
+├── llm.py       # Claude-scoring, kategorisering, resumé + heuristisk fallback
 ├── notify.py    # ntfy / Telegram / Pushover / Discord / konsol
-├── pipeline.py  # orkestrering + anti-støj (loft, stilletid)
+├── pipeline.py  # orkestrering + kategorifilter + anti-støj (loft, stilletid)
 └── __main__.py  # CLI: run | telegram-setup | test-notify
 ```

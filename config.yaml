@@ -9,7 +9,7 @@ schedule:
   # altid UTC, så workflowet vækkes på begge mulige UTC-tidspunkter (sommer-
   # og vintertid) og kører kun videre, hvis den lokale time står her.
   # Tom liste = kør uanset tidspunkt.
-  run_hours: [12, 22]
+  run_hours: [8, 12, 17, 22]
 
 notifications:
   # auto = brug den første kanal der har sine secrets sat
@@ -27,7 +27,7 @@ thresholds:
   breaking_score: 10   # sendes selv i stilleperioden
 
 limits:
-  max_notifications_per_day: 8
+  max_notifications_per_day: 10
   cluster_window_hours: 72     # hvor langt tilbage der ledes efter matchende klynger
   max_article_age_hours: 48    # ældre artikler ignoreres ved ingestion
   max_notify_age_hours: 48     # klynger ældre end dette notificeres ikke
@@ -40,6 +40,31 @@ quiet_hours:      # lokal tid; breaking (score >= breaking_score) sendes alligev
 llm:
   scoring_model: claude-haiku-4-5
   summary_model: claude-sonnet-5
+
+# Sortering: hvad der er værd at blive forstyrret af.
+# Hver klynge kategoriseres af LLM'en, og kategorien afgør tærsklen.
+filtering:
+  # Det du udtrykkeligt bad om — får +1 i score, så de slipper lettere igennem.
+  priority_categories: [model_launch, model_update, feature, open_source, pricing]
+  priority_boost: 1
+
+  # Sendes aldrig, uanset score: holdninger, rygter, listicles, tutorials, marketing.
+  blocked_categories: [noise]
+
+  # Tærskel pr. kategori (falder tilbage til thresholds.notify_score).
+  # Lav tærskel = slipper let igennem. Høj tærskel = skal være stort.
+  category_thresholds:
+    model_launch: 5     # ny model — vil næsten altid vide det
+    model_update: 5     # fx opdatering til Fable
+    feature: 6          # nye funktioner og API-kapabiliteter
+    open_source: 6
+    pricing: 6
+    security: 7
+    infrastructure: 8
+    regulation: 8
+    business: 8         # opkøb/investeringer skal være store
+    research: 9         # papers kun hvis de er banebrydende
+    industry: 8         # anden IT-nyhed skal være væsentlig
 
 feeds:
   # Førstehåndskilder (firma-blogs). Anthropic har ikke officiel RSS — dækkes via medier/HN.
@@ -118,3 +143,66 @@ reddit:
     - MachineLearning
     - LocalLLaMA
     - artificial
+
+# X/Twitter — de mest toneangivende AI-stemmer.
+# Hentes gratis via nitter-instanser (uofficielt; kan blive blokeret af X uden
+# varsel — så logges en advarsel og resten af pipelinen kører videre).
+# Sættes X_BEARER_TOKEN, bruges det officielle X API i stedet (betalt, stabilt).
+x:
+  enabled: true
+  instances:
+    - https://nitter.net
+    - https://xcancel.com
+  include_retweets: false
+  min_length: 60        # korte opslag uden link/nøgleord filtreres fra
+  accounts:
+    # Officielle firmakonti
+    - OpenAI
+    - OpenAIDevs        # udvikler-/API-nyheder
+    - AnthropicAI
+    - GoogleDeepMind
+    - GoogleAI
+    - AIatMeta          # bemærk: @MetaAI findes ikke
+    - MistralAI
+    - huggingface
+    - nvidia
+    # Nøglepersoner
+    - sama              # Sam Altman, OpenAI
+    - gdb               # Greg Brockman, OpenAI
+    - demishassabis     # Demis Hassabis, DeepMind
+    - karpathy          # Andrej Karpathy
+    - alexalbert__      # Alex Albert, Anthropic
+    - ylecun            # Yann LeCun
+    - _philschmid       # Philipp Schmid, Google DeepMind
+    - swyx              # udvikler-perspektiv på AI
+  keywords:             # opslag med disse ord slipper altid igennem forfilteret
+    - launch
+    - launching
+    - introducing
+    - announcing
+    - available
+    - release
+    - released
+    - open source
+    - open weights
+    - model
+    - API
+    - pricing
+    - update
+
+# Bluesky — gratis officielt API. Færre AI-folk end på X, men stabilt.
+bluesky:
+  enabled: true
+  min_length: 60
+  accounts:
+    - simonwillison.net     # meget aktiv på LLM-værktøjer og modeludgivelser
+    - emollick.bsky.social  # Ethan Mollick, AI i praksis
+  keywords:
+    - launch
+    - introducing
+    - announcing
+    - release
+    - released
+    - open source
+    - model
+    - API

@@ -12,33 +12,75 @@ import anthropic
 
 log = logging.getLogger(__name__)
 
+CATEGORIES = [
+    "model_launch",   # helt ny model eller modelgeneration
+    "model_update",   # opdatering af eksisterende model
+    "feature",        # ny funktion, produkt eller API-kapabilitet
+    "open_source",    # åbne vægte / open source-udgivelse af betydning
+    "pricing",        # pris- eller tilgængelighedsændringer
+    "infrastructure", # chips, compute, datacentre, cloud
+    "security",       # sårbarheder, brud, AI-sikkerhed
+    "regulation",     # lovgivning, politik, retsafgørelser
+    "business",       # opkøb, investeringer, partnerskaber, ledelse
+    "research",       # papers, benchmarks, videnskabelige resultater
+    "industry",       # anden væsentlig IT-branchenyhed
+    "noise",          # holdninger, rygter, listicles, tutorials, marketing
+]
+
 SCORE_SCHEMA = {
     "type": "object",
     "properties": {
         "company": {"type": "string"},
+        "category": {"type": "string", "enum": CATEGORIES},
         "breakthrough": {"type": "integer"},
         "it_relevance": {"type": "integer"},
         "overall": {"type": "integer"},
         "reason": {"type": "string"},
     },
-    "required": ["company", "breakthrough", "it_relevance", "overall", "reason"],
+    "required": ["company", "category", "breakthrough", "it_relevance", "overall", "reason"],
     "additionalProperties": False,
 }
 
 SCORE_SYSTEM = """\
-You score AI news stories for an alert system aimed at IT professionals in Denmark.
+You triage AI/tech news for an alert system used by an IT professional in Denmark.
+They want concrete, actionable developments — not commentary. Specifically:
+new model launches and model updates (e.g. a new Claude/GPT/Gemini version), new
+features and API capabilities they could actually use, significant open source
+releases, and price changes. Beyond AI, they also want genuinely notable IT
+industry news. They do NOT want opinion pieces, speculation, rumors, listicles,
+tutorials, "top 10 AI tools" articles, marketing, or funding gossip.
+
 Given one story (possibly reported by several sources), return JSON with:
+
 - company: the main company/organization behind the news ("" if none).
-- breakthrough (0-10): how groundbreaking or industry-changing this is. High scores are for
-  new model generations, major acquisitions/partnerships, regulation, big price/API changes,
-  significant open source releases, or security incidents. Routine product updates, opinion
-  pieces, funding rumors and minor research papers score low.
-- it_relevance (0-10): impact on the IT industry — software development, ops/infrastructure,
-  security, developer tools, or the IT job market.
-- overall (0-10): combined significance for an IT professional. Only truly major news should
-  reach 8+. A 10 means drop-everything breaking news.
+
+- category: exactly one of:
+    model_launch   - a genuinely new model or model generation is released
+    model_update   - an existing model gets a new version or notable capability
+    feature        - a new product, feature, or API capability ships
+    open_source    - significant open weights or open source release
+    pricing        - price, quota, or availability changes
+    infrastructure - chips, compute, datacenters, cloud capacity
+    security       - vulnerabilities, breaches, AI security incidents
+    regulation     - laws, policy, court rulings
+    business       - acquisitions, funding, partnerships, leadership changes
+    research       - papers, benchmarks, scientific results
+    industry       - other genuinely notable IT industry news
+    noise          - opinion, speculation, rumors, listicles, tutorials, marketing,
+                     "X thinks Y about AI", personality drama, vague announcements
+  Use "noise" generously. A social media post that merely reacts to news, teases
+  something unannounced, or expresses an opinion is noise, even from a CEO.
+  An announcement of something concrete and shipped is not noise.
+
+- breakthrough (0-10): how groundbreaking or industry-changing this is.
+- it_relevance (0-10): impact on software development, ops/infrastructure,
+  security, developer tooling, or the IT job market.
+- overall (0-10): combined significance. Reserve 8+ for genuinely major news a
+  professional would want interrupted for. A 10 means drop-everything breaking news.
 - reason: one short sentence in Danish explaining the score.
-Be strict: most stories deserve overall 5 or less."""
+
+Be strict. Most stories deserve overall 5 or less. When a story is thin on
+substance or you cannot tell what concretely happened, score it low."""
 
 SUMMARY_SCHEMA = {
     "type": "object",
@@ -68,12 +110,26 @@ HEURISTIC_KEYWORDS = {
     4: ["research", "paper", "study", "benchmark"],
 }
 
+# Grov kategorigætning uden LLM. Rækkefølgen er prioriteret — første match vinder.
+HEURISTIC_CATEGORIES = [
+    ("model_launch", ["launches", "introducing", "unveils", "announcing", "meet "]),
+    ("model_update", ["update", "now available", "upgraded", "improves", "version"]),
+    ("open_source", ["open source", "open-source", "open weights", "open-weights"]),
+    ("pricing", ["price", "pricing", "free tier", "cheaper", "cost"]),
+    ("security", ["vulnerability", "breach", "exploit", "security", "cve-"]),
+    ("regulation", ["regulation", "ai act", "lawsuit", "court", "policy", "ban"]),
+    ("business", ["acquires", "acquisition", "funding", "raises", "partnership", "ipo"]),
+    ("research", ["paper", "research", "benchmark", "study", "arxiv"]),
+    ("feature", ["feature", "api", "launch", "release", "support for"]),
+]
+
 
 @dataclass
 class ScoreResult:
     overall: int
     company: str
     reason: str
+    category: str = "industry"
 
 
 @dataclass
@@ -112,10 +168,12 @@ def score_cluster(
     )
     text = next(b.text for b in response.content if b.type == "text")
     data = json.loads(text)
+    category = str(data.get("category", "industry"))
     return ScoreResult(
         overall=_clamp(data.get("overall")),
         company=str(data.get("company", ""))[:100],
         reason=str(data.get("reason", ""))[:500],
+        category=category if category in CATEGORIES else "industry",
     )
 
 
@@ -128,7 +186,19 @@ def heuristic_score(articles: list[sqlite3.Row]) -> ScoreResult:
     # Flere uafhængige kilder er i sig selv et signal om væsentlighed.
     if len({a["source"] for a in articles}) >= 3:
         score = min(10, score + 1)
-    return ScoreResult(overall=score, company="", reason="Heuristisk score (ingen LLM)")
+
+    category = "industry"
+    for name, keywords in HEURISTIC_CATEGORIES:
+        if any(kw in text for kw in keywords):
+            category = name
+            break
+
+    return ScoreResult(
+        overall=score,
+        company="",
+        reason="Heuristisk score (ingen LLM)",
+        category=category,
+    )
 
 
 def summarize_cluster(

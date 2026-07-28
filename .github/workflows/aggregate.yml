@@ -1,14 +1,15 @@
 name: AI News Aggregator
 
 on:
-  # Cron er ALTID UTC. Vi vil køre kl. 12 og 22 dansk tid, men Danmark skifter
-  # mellem UTC+2 (sommer) og UTC+1 (vinter). Derfor vækkes workflowet på begge
-  # mulige UTC-tidspunkter, og pipelinen afgør selv ud fra schedule.run_hours
-  # i config.yaml, om det er den rigtige lokale time — resten afsluttes straks.
-  #   10:00 UTC = 12:00 sommertid | 11:00 UTC = 12:00 vintertid
-  #   20:00 UTC = 22:00 sommertid | 21:00 UTC = 22:00 vintertid
+  # Cron er ALTID UTC. Vi vil køre kl. 8, 12, 17 og 22 dansk tid, men Danmark
+  # skifter mellem UTC+2 (sommer) og UTC+1 (vinter). Derfor vækkes workflowet på
+  # begge mulige UTC-tidspunkter for hver ønsket lokal time, og pipelinen afgør
+  # selv ud fra schedule.run_hours i config.yaml, om det er den rigtige lokale
+  # time — de fire "forkerte" vækninger afsluttes straks uden at hente noget.
+  #   06/07 UTC = 08 lokal | 10/11 UTC = 12 lokal
+  #   15/16 UTC = 17 lokal | 20/21 UTC = 22 lokal
   schedule:
-    - cron: "0 10,11,20,21 * * *"
+    - cron: "0 6,7,10,11,15,16,20,21 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -53,6 +54,8 @@ jobs:
       - name: Run pipeline
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Valgfri: officielt X API (betalt). Uden denne bruges gratis nitter.
+          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
           # Sæt kun secrets for den kanal du bruger — resten kan stå tomme.
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           NTFY_SERVER: ${{ secrets.NTFY_SERVER }}

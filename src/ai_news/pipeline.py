@@ -23,6 +23,7 @@ class RunStats:
     scored: int = 0
     notified: int = 0
     skipped_quiet: int = 0
+    skipped_category: int = 0
     skipped_run: bool = False
     errors: list[str] = field(default_factory=list)
 
@@ -39,6 +40,26 @@ def in_quiet_hours(hour: int, start: int, end: int) -> bool:
 def is_confirmed(source_count: int, has_first_party: bool) -> bool:
     """Bekræftet: >= 2 uafhængige kilder, eller en førstehåndskilde (firma-blog)."""
     return source_count >= 2 or has_first_party
+
+
+def effective_score(score: int, category: str, filtering) -> int:
+    """Løft score for de kategorier brugeren udtrykkeligt har bedt om."""
+    if category in filtering.priority_categories:
+        return min(10, score + filtering.priority_boost)
+    return score
+
+
+def passes_filter(score: int, category: str, filtering, default_threshold: int) -> bool:
+    """Afgør om en klynge overhovedet må sendes.
+
+    Blokerede kategorier (typisk 'noise') ryger ud uanset score. Resten
+    måles mod kategoriens egen tærskel, så fx en modellancering slipper
+    igennem tidligere end et forskningspaper.
+    """
+    if category in filtering.blocked_categories:
+        return False
+    boosted = effective_score(score, category, filtering)
+    return boosted >= filtering.threshold_for(category, default_threshold)
 
 
 def _cluster_articles(conn: sqlite3.Connection, cluster_id: int) -> list[sqlite3.Row]:
@@ -90,13 +111,26 @@ def _score_pending(
             continue
         conn.execute(
             """UPDATE clusters
-               SET score = ?, company = ?, score_reason = ?, scored_source_count = ?
+               SET score = ?, company = ?, category = ?, score_reason = ?, scored_source_count = ?
                WHERE id = ?""",
-            (result.overall, result.company, result.reason, row["n_sources"], row["id"]),
+            (
+                result.overall,
+                result.company,
+                result.category,
+                result.reason,
+                row["n_sources"],
+                row["id"],
+            ),
         )
         conn.commit()
         stats.scored += 1
-        log.info("Klynge %s scoret %d: %s", row["id"], result.overall, result.reason)
+        log.info(
+            "Klynge %s: %d [%s] %s",
+            row["id"],
+            result.overall,
+            result.category,
+            result.reason,
+        )
 
 
 def _notify_candidates(
@@ -114,23 +148,29 @@ def _notify_candidates(
     local_midnight = datetime.combine(now_local.date(), time.min, tzinfo=tz)
     sent_today = notifications_sent_since(conn, local_midnight.astimezone(timezone.utc))
 
+    # Hent alle uafsendte klynger med en score; kategorifilteret afgør resten,
+    # da tærsklen varierer pr. kategori og et løft kan bringe en klynge over.
     min_created = (now_utc - timedelta(hours=cfg.max_notify_age_hours)).isoformat()
     candidates = conn.execute(
-        """SELECT c.id, c.score,
+        """SELECT c.id, c.score, COALESCE(c.category, 'industry') AS category,
                   COUNT(DISTINCT a.source) AS n_sources,
                   MAX(a.source_type = 'first_party') AS has_first_party
            FROM clusters c JOIN articles a ON a.cluster_id = c.id
-           WHERE c.notified_at IS NULL AND c.score >= ? AND c.created_at >= ?
+           WHERE c.notified_at IS NULL AND c.score IS NOT NULL AND c.created_at >= ?
            GROUP BY c.id
            ORDER BY c.score DESC, c.id""",
-        (cfg.notify_score, min_created),
+        (min_created,),
     ).fetchall()
 
     for row in candidates:
+        if not passes_filter(row["score"], row["category"], cfg.filtering, cfg.notify_score):
+            stats.skipped_category += 1
+            continue
         if sent_today >= cfg.max_notifications_per_day:
             log.info("Dagligt loft nået (%d) — resten venter.", cfg.max_notifications_per_day)
             break
-        if quiet and row["score"] < cfg.breaking_score:
+        score = effective_score(row["score"], row["category"], cfg.filtering)
+        if quiet and score < cfg.breaking_score:
             stats.skipped_quiet += 1
             continue
 
@@ -146,7 +186,7 @@ def _notify_candidates(
 
         confirmed = is_confirmed(row["n_sources"], bool(row["has_first_party"]))
         note = notify.build_notification(
-            summary, articles[0]["url"], row["n_sources"], confirmed, row["score"]
+            summary, articles[0]["url"], row["n_sources"], confirmed, score
         )
         try:
             notifier.send(note)

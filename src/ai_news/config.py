@@ -31,6 +31,40 @@ class Reddit:
 
 
 @dataclass
+class XSource:
+    """X/Twitter. Hentes gratis via nitter-instanser, eller via det officielle
+    API hvis X_BEARER_TOKEN er sat (mere driftssikkert, men betalt)."""
+
+    enabled: bool = True
+    accounts: list[str] = field(default_factory=list)
+    instances: list[str] = field(default_factory=list)
+    include_retweets: bool = False
+    min_length: int = 60
+    keywords: list[str] = field(default_factory=list)
+
+
+@dataclass
+class Bluesky:
+    enabled: bool = True
+    accounts: list[str] = field(default_factory=list)
+    min_length: int = 60
+    keywords: list[str] = field(default_factory=list)
+
+
+@dataclass
+class Filtering:
+    """Kategoribaseret sortering, så det ikke bare er ALT der sendes."""
+
+    priority_categories: list[str] = field(default_factory=list)
+    priority_boost: int = 1
+    blocked_categories: list[str] = field(default_factory=list)
+    category_thresholds: dict[str, int] = field(default_factory=dict)
+
+    def threshold_for(self, category: str, default: int) -> int:
+        return self.category_thresholds.get(category, default)
+
+
+@dataclass
 class Config:
     timezone: str = "Europe/Copenhagen"
     language: str = "da"
@@ -49,6 +83,9 @@ class Config:
     feeds: list[Feed] = field(default_factory=list)
     hackernews: HackerNews = field(default_factory=HackerNews)
     reddit: Reddit = field(default_factory=Reddit)
+    x: XSource = field(default_factory=XSource)
+    bluesky: Bluesky = field(default_factory=Bluesky)
+    filtering: Filtering = field(default_factory=Filtering)
 
     # Notifikationskanal: auto | ntfy | telegram | pushover | discord | console
     notify_channel: str = "auto"
@@ -56,6 +93,7 @@ class Config:
 
     # Secrets fra miljøet
     anthropic_api_key: str | None = None
+    x_bearer_token: str | None = None
     ntfy_topic: str | None = None
     ntfy_token: str | None = None
     telegram_bot_token: str | None = None
@@ -76,6 +114,9 @@ def load_config(path: str | Path) -> Config:
     notifications = raw.get("notifications", {})
     ntfy = notifications.get("ntfy", {})
     schedule = raw.get("schedule", {})
+    x = raw.get("x", {})
+    bluesky = raw.get("bluesky", {})
+    filtering = raw.get("filtering", {})
 
     return Config(
         timezone=raw.get("timezone", "Europe/Copenhagen"),
@@ -103,9 +144,32 @@ def load_config(path: str | Path) -> Config:
             min_score=int(reddit.get("min_score", 200)),
             subreddits=list(reddit.get("subreddits", [])),
         ),
+        x=XSource(
+            enabled=bool(x.get("enabled", True)),
+            accounts=list(x.get("accounts", [])),
+            instances=list(x.get("instances", ["https://nitter.net"])),
+            include_retweets=bool(x.get("include_retweets", False)),
+            min_length=int(x.get("min_length", 60)),
+            keywords=list(x.get("keywords", [])),
+        ),
+        bluesky=Bluesky(
+            enabled=bool(bluesky.get("enabled", True)),
+            accounts=list(bluesky.get("accounts", [])),
+            min_length=int(bluesky.get("min_length", 60)),
+            keywords=list(bluesky.get("keywords", [])),
+        ),
+        filtering=Filtering(
+            priority_categories=list(filtering.get("priority_categories", [])),
+            priority_boost=int(filtering.get("priority_boost", 1)),
+            blocked_categories=list(filtering.get("blocked_categories", [])),
+            category_thresholds={
+                str(k): int(v) for k, v in (filtering.get("category_thresholds") or {}).items()
+            },
+        ),
         notify_channel=notifications.get("channel", "auto"),
         ntfy_server=os.environ.get("NTFY_SERVER") or ntfy.get("server", "https://ntfy.sh"),
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
+        x_bearer_token=os.environ.get("X_BEARER_TOKEN"),
         ntfy_topic=os.environ.get("NTFY_TOPIC") or ntfy.get("topic") or None,
         ntfy_token=os.environ.get("NTFY_TOKEN"),
         telegram_bot_token=os.environ.get("TELEGRAM_BOT_TOKEN"),
