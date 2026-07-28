@@ -144,11 +144,11 @@ def _notify_candidates(
             summary = llm.fallback_summary(articles)
 
         confirmed = is_confirmed(row["n_sources"], bool(row["has_first_party"]))
-        message = notify.build_message(
+        note = notify.build_notification(
             summary, articles[0]["url"], row["n_sources"], confirmed, row["score"]
         )
         try:
-            notifier.send(message)
+            notifier.send(note)
         except Exception as exc:  # noqa: BLE001
             log.error("Afsendelse for klynge %s fejlede: %s", row["id"], exc)
             stats.errors.append(f"send cluster {row['id']}: {exc}")
@@ -157,7 +157,7 @@ def _notify_candidates(
         sent_at = datetime.now(timezone.utc).isoformat()
         conn.execute(
             "INSERT INTO notifications (cluster_id, channel, message, sent_at) VALUES (?, ?, ?, ?)",
-            (row["id"], notifier.channel, message, sent_at),
+            (row["id"], notifier.channel, note.plain(), sent_at),
         )
         conn.execute("UPDATE clusters SET notified_at = ? WHERE id = ?", (sent_at, row["id"]))
         conn.commit()
@@ -184,16 +184,7 @@ def run(cfg: Config, conn: sqlite3.Connection, *, dry_run: bool = False, use_llm
 
     _score_pending(conn, cfg, client, stats)
 
-    if dry_run:
-        notifier = notify.ConsoleNotifier()
-    elif cfg.telegram_bot_token and cfg.telegram_chat_id:
-        notifier = notify.TelegramNotifier(cfg.telegram_bot_token, cfg.telegram_chat_id)
-    else:
-        log.warning(
-            "TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID er ikke sat — udskriver til konsol i stedet. "
-            "Se README for opsætning."
-        )
-        notifier = notify.ConsoleNotifier()
+    notifier = notify.build_notifier(cfg, dry_run=dry_run)
 
     _notify_candidates(conn, cfg, client, notifier, stats)
     return stats

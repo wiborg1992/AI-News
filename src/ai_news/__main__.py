@@ -22,9 +22,10 @@ def main(argv: list[str] | None = None) -> int:
     run_parser = sub.add_parser("run", help="Kør hele pipelinen (standard)")
     run_parser.add_argument("--dry-run", action="store_true", help="Udskriv notifikationer i stedet for at sende")
     run_parser.add_argument("--no-llm", action="store_true", help="Brug heuristisk scoring uden Claude API")
-    sub.add_parser("telegram-setup", help="Vis chat_id'er der har skrevet til botten")
-    test_parser = sub.add_parser("test-notify", help="Send en testbesked via Telegram")
-    test_parser.add_argument("--message", default="✅ AI-News er sat korrekt op!")
+    sub.add_parser("telegram-setup", help="Vis chat_id'er der har skrevet til Telegram-botten")
+    sub.add_parser("ntfy-setup", help="Foreslå et tilfældigt ntfy-emnenavn")
+    test_parser = sub.add_parser("test-notify", help="Send en testbesked via den valgte kanal")
+    test_parser.add_argument("--message", default="AI-News er sat korrekt op!")
 
     args = parser.parse_args(argv)
     logging.basicConfig(
@@ -43,12 +44,40 @@ def main(argv: list[str] | None = None) -> int:
         notify.print_chat_ids(token)
         return 0
 
+    if command == "ntfy-setup":
+        topic = notify.suggest_ntfy_topic()
+        print("1. Installer ntfy-appen (App Store / Google Play / F-Droid).")
+        print(f"2. Tryk + og abonnér på emnet:  {topic}")
+        print(f"3. Sæt NTFY_TOPIC={topic} som miljøvariabel / GitHub Secret.")
+        print("4. Kør: python -m ai_news test-notify")
+        print(
+            "\nEmnenavnet er reelt din adgangsnøgle på det offentlige ntfy.sh — "
+            "hold det for dig selv, ellers kan andre læse og sende dine notifikationer."
+        )
+        return 0
+
     if command == "test-notify":
-        if not (cfg.telegram_bot_token and cfg.telegram_chat_id):
-            print("Sæt TELEGRAM_BOT_TOKEN og TELEGRAM_CHAT_ID først.", file=sys.stderr)
+        try:
+            notifier = notify.build_notifier(cfg)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
             return 1
-        notify.TelegramNotifier(cfg.telegram_bot_token, cfg.telegram_chat_id).send(args.message)
-        print("Testbesked sendt.")
+        if notifier.channel == "console":
+            print(
+                "Ingen kanal konfigureret. Kør 'python -m ai_news ntfy-setup' for den "
+                "hurtigste vej til notifikationer på telefonen.",
+                file=sys.stderr,
+            )
+            return 1
+        note = notify.Notification(
+            title=f"✅ {args.message}",
+            body="Det er en testbesked fra AI-News. Rigtige notifikationer indeholder "
+            "resumé, påvirkning på IT-branchen og link til artiklen.",
+            link="https://github.com/wiborg1992/AI-News",
+            score=7,
+        )
+        notifier.send(note)
+        print(f"Testbesked sendt via {notifier.channel}.")
         return 0
 
     conn = db.connect(args.db)

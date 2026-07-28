@@ -49,10 +49,19 @@ class Config:
     hackernews: HackerNews = field(default_factory=HackerNews)
     reddit: Reddit = field(default_factory=Reddit)
 
+    # Notifikationskanal: auto | ntfy | telegram | pushover | discord | console
+    notify_channel: str = "auto"
+    ntfy_server: str = "https://ntfy.sh"
+
     # Secrets fra miljøet
     anthropic_api_key: str | None = None
+    ntfy_topic: str | None = None
+    ntfy_token: str | None = None
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
+    pushover_token: str | None = None
+    pushover_user: str | None = None
+    discord_webhook_url: str | None = None
 
 
 def load_config(path: str | Path) -> Config:
@@ -63,6 +72,8 @@ def load_config(path: str | Path) -> Config:
     llm = raw.get("llm", {})
     hn = raw.get("hackernews", {})
     reddit = raw.get("reddit", {})
+    notifications = raw.get("notifications", {})
+    ntfy = notifications.get("ntfy", {})
 
     return Config(
         timezone=raw.get("timezone", "Europe/Copenhagen"),
@@ -89,7 +100,14 @@ def load_config(path: str | Path) -> Config:
             min_score=int(reddit.get("min_score", 200)),
             subreddits=list(reddit.get("subreddits", [])),
         ),
+        notify_channel=notifications.get("channel", "auto"),
+        ntfy_server=os.environ.get("NTFY_SERVER") or ntfy.get("server", "https://ntfy.sh"),
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
+        ntfy_topic=os.environ.get("NTFY_TOPIC") or ntfy.get("topic") or None,
+        ntfy_token=os.environ.get("NTFY_TOKEN"),
         telegram_bot_token=os.environ.get("TELEGRAM_BOT_TOKEN"),
         telegram_chat_id=os.environ.get("TELEGRAM_CHAT_ID"),
+        pushover_token=os.environ.get("PUSHOVER_TOKEN"),
+        pushover_user=os.environ.get("PUSHOVER_USER"),
+        discord_webhook_url=os.environ.get("DISCORD_WEBHOOK_URL"),
     )

@@ -37,7 +37,7 @@ Software der overvåger de største AI-nyhedskilder, krydstjekker historier på 
 ┌─────────────────────────────────────────────────────────────┐
 │                    RESUMÉ & NOTIFIKATION                    │
 │  LLM genererer: hvad/hvem/påvirkning + link                 │
-│  Push via Telegram (alt.: Signal) → telefonen               │
+│  Push via ntfy/Telegram/Pushover/Discord → telefonen        │
 └─────────────────────────────────────────────────────────────┘
                            │
                      ┌─────┴─────┐
@@ -105,7 +105,13 @@ Beslutningen om X-API tages først, når vi kan måle hvad den indirekte dæknin
   > **Påvirkning:** Direkte konkurrence på udviklerværktøjer; forvent pres på priser hos alle udbydere og nye muligheder i CI/CD-automatisering.
   > 🔗 openai.com/blog/gpt-6
 
-- **Leveringskanal — Telegram-bot** (gratis, officielt Bot API, rig formattering, push på iOS/Android). Opsætning: opret bot via @BotFather, modtageren starter chatten med botten én gang, hvorefter beskeder sendes til dennes `chat_id`. **Alternativ: Signal** via `signal-cli` — muligt, men uden officielt API og med krav om selv-hostet daemon og et registreret nummer, så det er mere skrøbeligt; vælges kun hvis Telegram fravælges. Kanalen abstraheres bag ét interface, så den kan skiftes.
+- **Leveringskanal — udskiftelig bag ét interface.** Fire kanaler er implementeret, og systemet vælger automatisk den første der har sine secrets sat:
+  1. **ntfy.sh** (anbefalet i praksis): gratis, open source, apps til iOS/Android, ingen konto. Emnenavnet fungerer som adgangsnøgle på den offentlige server, så det genereres tilfældigt og opbevares som secret; selv-hosting med token understøttes.
+  2. **Telegram-bot**: gratis officielt Bot API, rig formattering.
+  3. **Pushover**: engangskøb (~5 USD), meget driftssikker.
+  4. **Discord-webhook**: hvis appen alligevel er på telefonen.
+
+  **Signal** blev fravalgt: intet officielt API, kræver selv-hostet `signal-cli`-daemon og et registreret nummer — for skrøbeligt til en ubemandet cron-pipeline.
 - **Persondata:** Telefonnummer og `chat_id` opbevares udelukkende som secrets/miljøvariabler (GitHub Actions Secrets) — aldrig i repoet.
 - **Anti-støj:** max N notifikationer/dag (konfigurerbart), nattestille (fx 23-07, breaking med score 10 undtaget), og opfølgninger på samme klynge opdaterer/erstattes frem for at sende igen.
 
@@ -124,11 +130,11 @@ Beslutningen om X-API tages først, når vi kan måle hvad den indirekte dæknin
 | Dedup | `rapidfuzz` + embeddings | Billigt først, præcist bagefter |
 | LLM | Claude Haiku (scoring) + Claude Sonnet (resuméer) | Pris/kvalitet matcher opgaverne |
 | Database | SQLite | Ingen driftsbyrde |
-| Push | Telegram-bot (alt.: Signal via `signal-cli`) | Gratis, officielt API, push på iOS/Android |
+| Push | ntfy / Telegram / Pushover / Discord (udskiftelig) | Gratis muligheder, push på iOS/Android, ingen låsning til én udbyder |
 | Kørsel | GitHub Actions cron (start) → lille VPS/Fly.io (hvis <15 min-interval eller mere kontrol ønskes) | Gratis at starte; Actions-cron kan dog drifte 5-15 min |
 | Konfiguration | `config.yaml` (kilder, tærskler, stilletider) + secrets i miljøvariabler | Nemt at justere uden kodeændringer |
 
-**Estimerede driftsomkostninger:** 0 kr. for infrastruktur (GitHub Actions + Telegram) + LLM-forbrug skønnet **1-5 USD/md** (Haiku-scoring af ~50-150 klynger/dag + få Sonnet-resuméer). X API er eneste potentielt dyre tilkøb.
+**Estimerede driftsomkostninger:** 0 kr. for infrastruktur (GitHub Actions + ntfy/Telegram) + LLM-forbrug skønnet **1-5 USD/md** (Haiku-scoring af ~50-150 klynger/dag + få Sonnet-resuméer). X API er eneste potentielt dyre tilkøb.
 
 ---
 
@@ -140,7 +146,7 @@ Beslutningen om X-API tages først, når vi kan måle hvad den indirekte dæknin
 - [x] URL/titel-dedup
 - [x] LLM-scoring med tærskel (Claude Haiku, structured outputs; heuristisk fallback uden API-nøgle)
 - [x] Resumé-generering på dansk i det faste format (Claude Sonnet)
-- [x] Push via Telegram-bot til telefonen (chat_id og tokens som secrets)
+- [x] Push til telefonen via udskiftelig kanal — ntfy, Telegram, Pushover eller Discord (alle tokens som secrets)
 - [x] Kørsel via GitHub Actions cron (hvert 15. min)
 
 **Resultat:** Notifikationer på telefonen om de vigtigste AI-nyheder, typisk inden for 15-30 min efter publicering.

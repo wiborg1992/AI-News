@@ -1,6 +1,6 @@
 from ai_news import db
 from ai_news.llm import fallback_summary, heuristic_score
-from ai_news.notify import build_message
+from ai_news.notify import TelegramNotifier, build_notification
 
 
 def _rows(conn, items):
@@ -31,18 +31,53 @@ def test_heuristic_multi_source_bonus():
     assert heuristic_score(multi).overall > heuristic_score(single).overall
 
 
-def test_build_message_contains_link_and_escapes_html():
+def test_build_notification_contains_link_and_status():
     conn = db.connect(":memory:")
-    rows = _rows(conn, [("A", "Title <script>", "Summary & more")])
-    summary = fallback_summary(rows)
-    msg = build_message(summary, rows[0]["url"], source_count=2, confirmed=True, score=8)
-    assert '<a href="https://x.com/' in msg
-    assert "bekræftet af 2 kilder" in msg
-    assert "<script>" not in msg  # HTML fra kilder skal escapes
+    rows = _rows(conn, [("A", "OpenAI lancerer GPT-6", "Ny modelgeneration")])
+    note = build_notification(
+        fallback_summary(rows), rows[0]["url"], source_count=2, confirmed=True, score=8
+    )
+    assert "bekræftet af 2 kilder" in note.title
+    assert note.link == rows[0]["url"]
+    assert note.link in note.plain()
 
 
-def test_build_message_unconfirmed_marker():
+def test_build_notification_unconfirmed_marker():
     conn = db.connect(":memory:")
     rows = _rows(conn, [("A", "Solo story", "")])
-    msg = build_message(fallback_summary(rows), rows[0]["url"], source_count=1, confirmed=False, score=7)
-    assert "ubekræftet" in msg
+    note = build_notification(
+        fallback_summary(rows), rows[0]["url"], source_count=1, confirmed=False, score=7
+    )
+    assert "ubekræftet" in note.title
+
+
+def test_telegram_rendering_escapes_html_from_sources():
+    """HTML fra kilder må aldrig nå Telegram uescapet."""
+    conn = db.connect(":memory:")
+    rows = _rows(conn, [("A", "Title <script>alert(1)</script>", "Summary & more")])
+    note = build_notification(
+        fallback_summary(rows), rows[0]["url"], source_count=1, confirmed=False, score=7
+    )
+
+    sent = {}
+
+    class FakePost:
+        def raise_for_status(self):
+            return None
+
+    def fake_post(url, json=None, **kwargs):
+        sent["text"] = json["text"]
+        return FakePost()
+
+    import ai_news.notify as notify_mod
+
+    original = notify_mod.httpx.post
+    notify_mod.httpx.post = fake_post
+    try:
+        TelegramNotifier("token", "chat").send(note)
+    finally:
+        notify_mod.httpx.post = original
+
+    assert "<script>" not in sent["text"]
+    assert "&lt;script&gt;" in sent["text"]
+    assert '<a href="https://x.com/' in sent["text"]

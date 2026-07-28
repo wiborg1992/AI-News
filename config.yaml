@@ -1,9 +1,19 @@
 # AI-News konfiguration
-# Secrets (ANTHROPIC_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID) sættes som
-# miljøvariabler / GitHub Actions Secrets — aldrig her.
+# Secrets sættes som miljøvariabler / GitHub Actions Secrets — aldrig her.
 
 timezone: Europe/Copenhagen
 language: da
+
+notifications:
+  # auto = brug den første kanal der har sine secrets sat
+  # (rækkefølge: ntfy -> telegram -> pushover -> discord)
+  # Sæt eksplicit til: ntfy | telegram | pushover | discord | console
+  channel: auto
+  ntfy:
+    server: https://ntfy.sh
+    # topic sættes via NTFY_TOPIC — emnenavnet er reelt din adgangsnøgle
+    # på det offentlige ntfy.sh, så det hører ikke hjemme i repoet.
+    # Kør: python -m ai_news ntfy-setup
 
 thresholds:
   notify_score: 7      # minimum samlet score (0-10) før der sendes notifikation
