@@ -14,7 +14,7 @@ Software der overvåger de største AI-nyhedskilder, krydstjekker historier på 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    INGESTION (hvert 10.-15. min)            │
-│  RSS/Atom-feeds · Hacker News API · Reddit JSON · X-kilder  │
+│  RSS/Atom-feeds · TLDR · Hacker News · Reddit · X-kilder    │
 └──────────────────────────┬──────────────────────────────────┘
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
@@ -37,7 +37,7 @@ Software der overvåger de største AI-nyhedskilder, krydstjekker historier på 
 ┌─────────────────────────────────────────────────────────────┐
 │                    RESUMÉ & NOTIFIKATION                    │
 │  LLM genererer: hvad/hvem/påvirkning + link                 │
-│  Push via ntfy/Telegram/Pushover → telefonen                │
+│  Push via Telegram (alt.: Signal) → telefonen               │
 └─────────────────────────────────────────────────────────────┘
                            │
                      ┌─────┴─────┐
@@ -56,6 +56,7 @@ Software der overvåger de største AI-nyhedskilder, krydstjekker historier på 
 |---|---|
 | **Firma-blogs (førstehåndskilder)** | OpenAI News, Anthropic News, Google DeepMind Blog, Google AI Blog, Meta AI Blog, Microsoft AI Blog, Mistral, xAI, Hugging Face Blog, NVIDIA Blog |
 | **Tech-medier** | TechCrunch (AI-sektion), The Verge (AI), VentureBeat AI, Ars Technica, Wired AI, MIT Technology Review |
+| **Kuraterede nyhedsbreve** | TLDR AI (dagligt, RSS: `tldr.tech/api/rss/ai`) — fungerer både som kilde og som ekstra krydstjek af, hvad branchen selv fremhæver |
 | **Nyhedsbureauer** | Reuters Technology, AP Technology (via RSS) |
 | **Community/udvikler-signaler** | Hacker News (Algolia API, filtreret på AI-emner + points-tærskel), Reddit r/MachineLearning, r/LocalLLaMA, r/artificial (offentligt JSON-API) |
 | **Forskning (valgfrit, fase 3)** | arXiv cs.AI/cs.CL (kun papers med stort buzz andre steder) |
@@ -104,7 +105,8 @@ Beslutningen om X-API tages først, når vi kan måle hvad den indirekte dæknin
   > **Påvirkning:** Direkte konkurrence på udviklerværktøjer; forvent pres på priser hos alle udbydere og nye muligheder i CI/CD-automatisering.
   > 🔗 openai.com/blog/gpt-6
 
-- **Leveringskanal — anbefaling: [ntfy.sh](https://ntfy.sh)** (gratis, open source, app til iOS/Android, ét HTTP POST at sende). Alternativer: Telegram-bot (gratis, rig formattering) eller Pushover (engangskøb ~5 USD). Kanalen abstraheres bag ét interface, så den kan skiftes.
+- **Leveringskanal — Telegram-bot** (gratis, officielt Bot API, rig formattering, push på iOS/Android). Opsætning: opret bot via @BotFather, modtageren starter chatten med botten én gang, hvorefter beskeder sendes til dennes `chat_id`. **Alternativ: Signal** via `signal-cli` — muligt, men uden officielt API og med krav om selv-hostet daemon og et registreret nummer, så det er mere skrøbeligt; vælges kun hvis Telegram fravælges. Kanalen abstraheres bag ét interface, så den kan skiftes.
+- **Persondata:** Telefonnummer og `chat_id` opbevares udelukkende som secrets/miljøvariabler (GitHub Actions Secrets) — aldrig i repoet.
 - **Anti-støj:** max N notifikationer/dag (konfigurerbart), nattestille (fx 23-07, breaking med score 10 undtaget), og opfølgninger på samme klynge opdaterer/erstattes frem for at sende igen.
 
 ### 3.5 Lagring
@@ -122,11 +124,11 @@ Beslutningen om X-API tages først, når vi kan måle hvad den indirekte dæknin
 | Dedup | `rapidfuzz` + embeddings | Billigt først, præcist bagefter |
 | LLM | Claude Haiku (scoring) + Claude Sonnet (resuméer) | Pris/kvalitet matcher opgaverne |
 | Database | SQLite | Ingen driftsbyrde |
-| Push | ntfy.sh | Gratis, simpelt, apps til begge platforme |
+| Push | Telegram-bot (alt.: Signal via `signal-cli`) | Gratis, officielt API, push på iOS/Android |
 | Kørsel | GitHub Actions cron (start) → lille VPS/Fly.io (hvis <15 min-interval eller mere kontrol ønskes) | Gratis at starte; Actions-cron kan dog drifte 5-15 min |
 | Konfiguration | `config.yaml` (kilder, tærskler, stilletider) + secrets i miljøvariabler | Nemt at justere uden kodeændringer |
 
-**Estimerede driftsomkostninger:** 0 kr. for infrastruktur (GitHub Actions + ntfy) + LLM-forbrug skønnet **1-5 USD/md** (Haiku-scoring af ~50-150 klynger/dag + få Sonnet-resuméer). X API er eneste potentielt dyre tilkøb.
+**Estimerede driftsomkostninger:** 0 kr. for infrastruktur (GitHub Actions + Telegram) + LLM-forbrug skønnet **1-5 USD/md** (Haiku-scoring af ~50-150 klynger/dag + få Sonnet-resuméer). X API er eneste potentielt dyre tilkøb.
 
 ---
 
@@ -134,11 +136,11 @@ Beslutningen om X-API tages først, når vi kan måle hvad den indirekte dæknin
 
 ### Fase 1 — MVP (kernen virker end-to-end)
 - [ ] Projektskelet: `pyproject.toml`, `config.yaml`, SQLite-skema
-- [ ] Ingestion af 10-15 RSS-feeds (firma-blogs + 4-5 medier)
+- [ ] Ingestion af 10-15 RSS-feeds (firma-blogs + 4-5 medier + TLDR AI)
 - [ ] URL/titel-dedup
 - [ ] LLM-scoring med tærskel
 - [ ] Resumé-generering på dansk i det faste format
-- [ ] Push via ntfy til telefonen
+- [ ] Push via Telegram-bot til telefonen (chat_id og tokens som secrets)
 - [ ] Kørsel via GitHub Actions cron (hvert 15. min)
 
 **Resultat:** Notifikationer på telefonen om de vigtigste AI-nyheder, typisk inden for 15-30 min efter publicering.
@@ -180,5 +182,5 @@ Beslutningen om X-API tages først, når vi kan måle hvad den indirekte dæknin
 
 1. Opsæt projektskelet og SQLite-skema (fase 1, punkt 1)
 2. Implementér ingestion + dedup for de første 10-15 feeds
-3. Scoring- og resumé-prompts + ntfy-integration
+3. Scoring- og resumé-prompts + Telegram-integration
 4. GitHub Actions-workflow og en uges prøvekørsel med lav tærskel for at samle kalibreringsdata
