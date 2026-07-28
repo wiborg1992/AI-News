@@ -24,6 +24,7 @@ class RunStats:
     notified: int = 0
     skipped_quiet: int = 0
     skipped_category: int = 0
+    merged: int = 0
     skipped_run: bool = False
     errors: list[str] = field(default_factory=list)
 
@@ -60,6 +61,92 @@ def passes_filter(score: int, category: str, filtering, default_threshold: int) 
         return False
     boosted = effective_score(score, category, filtering)
     return boosted >= filtering.threshold_for(category, default_threshold)
+
+
+def merge_clusters(conn: sqlite3.Connection, cluster_ids: list[int]) -> int:
+    """Læg klynger sammen til én. Returnerer id'et på den beholdte klynge.
+
+    Den ældste klynge beholdes (den fangede historien først), og den får
+    gruppens højeste score. Artikler og eventuelle notifikationer flyttes med,
+    så kildetællingen bliver rigtig — to medier om samme sag bliver dermed
+    'bekræftet af 2 kilder' i stedet for to gange 'ubekræftet'.
+    """
+    rows = conn.execute(
+        f"SELECT id, score, category, score_reason FROM clusters "  # noqa: S608 - kun heltal
+        f"WHERE id IN ({','.join('?' * len(cluster_ids))}) ORDER BY id",
+        cluster_ids,
+    ).fetchall()
+    if len(rows) < 2:
+        return rows[0]["id"] if rows else cluster_ids[0]
+
+    primary = rows[0]
+    best = max(rows, key=lambda r: r["score"] if r["score"] is not None else -1)
+
+    for row in rows[1:]:
+        conn.execute("UPDATE articles SET cluster_id = ? WHERE cluster_id = ?", (primary["id"], row["id"]))
+        conn.execute(
+            "UPDATE notifications SET cluster_id = ? WHERE cluster_id = ?", (primary["id"], row["id"])
+        )
+        conn.execute("DELETE FROM clusters WHERE id = ?", (row["id"],))
+
+    n_sources = conn.execute(
+        "SELECT COUNT(DISTINCT source) AS n FROM articles WHERE cluster_id = ?", (primary["id"],)
+    ).fetchone()["n"]
+    conn.execute(
+        """UPDATE clusters
+           SET score = ?, category = ?, score_reason = ?, scored_source_count = ?
+           WHERE id = ?""",
+        (best["score"], best["category"], best["score_reason"], n_sources, primary["id"]),
+    )
+    conn.commit()
+    return primary["id"]
+
+
+def _dedupe_candidates(
+    conn: sqlite3.Connection,
+    cfg: Config,
+    client: anthropic.Anthropic | None,
+    stats: RunStats,
+) -> None:
+    """Slå klynger sammen der dækker samme begivenhed.
+
+    Titel-matchning fanger ikke omskrevne overskrifter ('PSA: Your shared chats
+    ended up on Google' vs 'Private chats exposed in search results'), så her
+    spørges LLM'en — men kun om de få kandidater der faktisk ville blive sendt.
+    """
+    if client is None:
+        return
+
+    now_utc = datetime.now(timezone.utc)
+    min_created = (now_utc - timedelta(hours=cfg.max_notify_age_hours)).isoformat()
+    rows = conn.execute(
+        """SELECT c.id, c.score, COALESCE(c.category, 'industry') AS category,
+                  (SELECT a.title FROM articles a WHERE a.cluster_id = c.id ORDER BY a.id LIMIT 1) AS title
+           FROM clusters c
+           WHERE c.notified_at IS NULL AND c.score IS NOT NULL AND c.created_at >= ?
+           ORDER BY c.score DESC, c.id""",
+        (min_created,),
+    ).fetchall()
+
+    candidates = [
+        (r["id"], r["title"])
+        for r in rows
+        if r["title"] and passes_filter(r["score"], r["category"], cfg.filtering, cfg.notify_score)
+    ]
+    if len(candidates) < 2:
+        return
+
+    try:
+        groups = llm.find_duplicate_groups(client, cfg.scoring_model, candidates)
+    except Exception as exc:  # noqa: BLE001 - dedup må ikke vælte kørslen
+        log.warning("Dedup af kandidater fejlede: %s", exc)
+        stats.errors.append(f"dedupe: {exc}")
+        return
+
+    for group in groups:
+        kept = merge_clusters(conn, group)
+        stats.merged += len(group) - 1
+        log.info("Lagde klynge %s sammen til %d (samme historie)", group, kept)
 
 
 def _cluster_articles(conn: sqlite3.Connection, cluster_id: int) -> list[sqlite3.Row]:
@@ -249,6 +336,7 @@ def run(
         log.warning("ANTHROPIC_API_KEY er ikke sat — falder tilbage til heuristisk scoring.")
 
     _score_pending(conn, cfg, client, stats)
+    _dedupe_candidates(conn, cfg, client, stats)
 
     notifier = notify.build_notifier(cfg, dry_run=dry_run)
 

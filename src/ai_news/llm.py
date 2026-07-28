@@ -139,6 +139,80 @@ class Summary:
     impact: str
 
 
+DEDUP_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "groups": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "story": {"type": "string"},
+                    "cluster_ids": {"type": "array", "items": {"type": "integer"}},
+                },
+                "required": ["story", "cluster_ids"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["groups"],
+    "additionalProperties": False,
+}
+
+DEDUP_SYSTEM = """\
+You group news items that report the SAME underlying event, so a reader is not
+notified twice about one story.
+
+You get a numbered list of candidate items. Return groups of cluster_ids that
+cover the same event, plus a short label for each group.
+
+Group them only when they describe the same concrete event — the same launch,
+the same incident, the same announcement — even when the wording differs a lot.
+For example, "PSA: Your shared chats ended up on Google" and "Private chats
+exposed in search results" are the same incident and belong together.
+
+Do NOT group items merely because they share a topic, a company, or a product
+line. Two separate features from the same vendor are two stories. A launch and
+a later analysis of that launch are two stories.
+
+Only return groups containing two or more cluster_ids. If nothing is a
+duplicate, return an empty list."""
+
+
+def find_duplicate_groups(
+    client: anthropic.Anthropic, model: str, candidates: list[tuple[int, str]]
+) -> list[list[int]]:
+    """Find grupper af klynger der dækker samme begivenhed.
+
+    Kører kun på de få kandidater der er sluppet gennem tærsklen, så det er
+    ét billigt kald — ikke ét pr. artikel.
+    """
+    if len(candidates) < 2:
+        return []
+
+    listing = "\n".join(f"{cid}: {title[:200]}" for cid, title in candidates)
+    response = client.messages.create(
+        model=model,
+        max_tokens=1024,
+        system=DEDUP_SYSTEM,
+        output_config={"format": {"type": "json_schema", "schema": DEDUP_SCHEMA}},
+        messages=[{"role": "user", "content": listing}],
+    )
+    text = next(b.text for b in response.content if b.type == "text")
+    data = json.loads(text)
+
+    valid_ids = {cid for cid, _ in candidates}
+    groups: list[list[int]] = []
+    seen: set[int] = set()
+    for group in data.get("groups", []):
+        # Behold kun kendte id'er, og lad aldrig en klynge indgå i to grupper.
+        ids = [i for i in dict.fromkeys(group.get("cluster_ids", [])) if i in valid_ids and i not in seen]
+        if len(ids) >= 2:
+            seen.update(ids)
+            groups.append(ids)
+    return groups
+
+
 def _clamp(value: object, lo: int = 0, hi: int = 10) -> int:
     try:
         return max(lo, min(hi, int(value)))  # type: ignore[arg-type]

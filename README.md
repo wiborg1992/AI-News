@@ -7,7 +7,7 @@ Se [PLAN.md](PLAN.md) for arkitektur og faseplan.
 ## Sådan virker det
 
 1. **Ingestion** — kl. 8, 12, 17 og 22 dansk tid hentes RSS-feeds (OpenAI, DeepMind, TechCrunch, TLDR AI m.fl.), Hacker News, Reddit, **X** (16 AI-konti) og **Bluesky**.
-2. **Dedup & klyngedannelse** — samme historie fra flere kilder samles i én klynge (URL-kanonisering + fuzzy titelmatch).
+2. **Dedup & klyngedannelse** — samme historie fra flere kilder samles i én klynge. Først billigt (URL-kanonisering + fuzzy titelmatch), derefter lader LLM'en de få historier, der er sluppet gennem tærsklen, blive grupperet efter *begivenhed* — så "PSA: Your shared chats ended up on Google" og "Private chats exposed in search results" bliver til én besked i stedet for to.
 3. **Krydstjek** — en klynge er *bekræftet* ved ≥2 uafhængige kilder eller en førstehåndskilde (firma-blog). Ellers markeres den "🔶 ubekræftet".
 4. **Scoring & kategorisering** — Claude Haiku scorer 0-10 og placerer historien i én af 12 kategorier (`model_launch`, `model_update`, `feature`, `noise` …). Kategorien afgør tærsklen — se [Sortering](#sortering-hvad-slipper-igennem).
 5. **Notifikation** — Claude Sonnet skriver et dansk resumé (hvad/hvem/påvirkning + link), som pushes til telefonen. Max 10/dag, nattestille 23-07 (score 10 undtaget).

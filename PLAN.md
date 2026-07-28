@@ -156,7 +156,7 @@ X's officielle API koster fra ~200 USD/md for reel læseadgang. Det viste sig do
 **Resultat:** Notifikationer på telefonen om de vigtigste AI-nyheder, typisk inden for 15-30 min efter publicering.
 
 ### Fase 2 — Krydstjek og kvalitet (delvist leveret i MVP)
-- [ ] Embedding-baseret klyngedannelse på tværs af kilder (pt. fuzzy titelmatch — fanger ikke omskrevne overskrifter)
+- [x] Klyngedannelse på tværs af kilder ved omskrevne overskrifter — løst med LLM-gruppering af notifikationskandidater i stedet for embeddings (billigere: ét kald pr. kørsel i stedet for ét pr. artikel)
 - [x] Bekræftet/ubekræftet-mærkning (≥2 uafhængige kilder eller førstehåndskilde)
 - [x] Hacker News + Reddit som bekræftelses- og opdagelseskilder (Reddit kan 403'e fra datacenter-IP'er; håndteres som advarsel)
 - [x] Anti-støj: dagligt loft, nattestille, ingen gentagelser pr. klynge
