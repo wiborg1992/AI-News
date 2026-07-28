@@ -134,23 +134,24 @@ Beslutningen om X-API tages først, når vi kan måle hvad den indirekte dæknin
 
 ## 5. Faseplan
 
-### Fase 1 — MVP (kernen virker end-to-end)
-- [ ] Projektskelet: `pyproject.toml`, `config.yaml`, SQLite-skema
-- [ ] Ingestion af 10-15 RSS-feeds (firma-blogs + 4-5 medier + TLDR AI)
-- [ ] URL/titel-dedup
-- [ ] LLM-scoring med tærskel
-- [ ] Resumé-generering på dansk i det faste format
-- [ ] Push via Telegram-bot til telefonen (chat_id og tokens som secrets)
-- [ ] Kørsel via GitHub Actions cron (hvert 15. min)
+### Fase 1 — MVP (kernen virker end-to-end) ✅
+- [x] Projektskelet: `pyproject.toml`, `config.yaml`, SQLite-skema
+- [x] Ingestion af 10-15 RSS-feeds (firma-blogs + 4-5 medier + TLDR AI)
+- [x] URL/titel-dedup
+- [x] LLM-scoring med tærskel (Claude Haiku, structured outputs; heuristisk fallback uden API-nøgle)
+- [x] Resumé-generering på dansk i det faste format (Claude Sonnet)
+- [x] Push via Telegram-bot til telefonen (chat_id og tokens som secrets)
+- [x] Kørsel via GitHub Actions cron (hvert 15. min)
 
 **Resultat:** Notifikationer på telefonen om de vigtigste AI-nyheder, typisk inden for 15-30 min efter publicering.
 
-### Fase 2 — Krydstjek og kvalitet
-- [ ] Embedding-baseret klyngedannelse på tværs af kilder
-- [ ] Bekræftet/ubekræftet-mærkning (≥2 uafhængige kilder)
-- [ ] Hacker News + Reddit som bekræftelses- og opdagelseskilder
-- [ ] Anti-støj: dagligt loft, nattestille, ingen gentagelser pr. klynge
-- [ ] Logning af alle scores til senere tærskel-tuning
+### Fase 2 — Krydstjek og kvalitet (delvist leveret i MVP)
+- [ ] Embedding-baseret klyngedannelse på tværs af kilder (pt. fuzzy titelmatch — fanger ikke omskrevne overskrifter)
+- [x] Bekræftet/ubekræftet-mærkning (≥2 uafhængige kilder eller førstehåndskilde)
+- [x] Hacker News + Reddit som bekræftelses- og opdagelseskilder (Reddit kan 403'e fra datacenter-IP'er; håndteres som advarsel)
+- [x] Anti-støj: dagligt loft, nattestille, ingen gentagelser pr. klynge
+- [x] Logning af alle scores til senere tærskel-tuning (gemmes i `clusters`-tabellen)
+- [ ] Sundhedstjek pr. kilde (alarm hvis en kilde er tavs >48 t)
 
 ### Fase 3 — Bredere signaler
 - [ ] Bluesky-overvågning af nøglepersoner (gratis API)

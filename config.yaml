@@ -1,0 +1,103 @@
+# AI-News konfiguration
+# Secrets (ANTHROPIC_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID) sættes som
+# miljøvariabler / GitHub Actions Secrets — aldrig her.
+
+timezone: Europe/Copenhagen
+language: da
+
+thresholds:
+  notify_score: 7      # minimum samlet score (0-10) før der sendes notifikation
+  breaking_score: 10   # sendes selv i stilleperioden
+
+limits:
+  max_notifications_per_day: 8
+  cluster_window_hours: 72     # hvor langt tilbage der ledes efter matchende klynger
+  max_article_age_hours: 48    # ældre artikler ignoreres ved ingestion
+  max_notify_age_hours: 48     # klynger ældre end dette notificeres ikke
+  title_match_threshold: 87    # rapidfuzz-tærskel for at to titler er samme historie
+
+quiet_hours:      # lokal tid; breaking (score >= breaking_score) sendes alligevel
+  start: 23
+  end: 7
+
+llm:
+  scoring_model: claude-haiku-4-5
+  summary_model: claude-sonnet-5
+
+feeds:
+  # Førstehåndskilder (firma-blogs). Anthropic har ikke officiel RSS — dækkes via medier/HN.
+  - name: OpenAI News
+    url: https://openai.com/news/rss.xml
+    type: first_party
+  - name: Google DeepMind
+    url: https://deepmind.google/blog/rss.xml
+    type: first_party
+  - name: Google AI Blog
+    url: https://blog.google/technology/ai/rss/
+    type: first_party
+  - name: Microsoft AI
+    url: https://news.microsoft.com/source/topics/ai/feed/
+    type: first_party
+  - name: Microsoft Azure Blog
+    url: https://azure.microsoft.com/en-us/blog/feed/
+    type: first_party
+  - name: NVIDIA Blog
+    url: https://blogs.nvidia.com/feed/
+    type: first_party
+  - name: Hugging Face
+    url: https://huggingface.co/blog/feed.xml
+    type: first_party
+
+  # Tech-medier
+  - name: TechCrunch AI
+    url: https://techcrunch.com/category/artificial-intelligence/feed/
+    type: media
+  - name: The Verge AI
+    url: https://www.theverge.com/rss/ai-artificial-intelligence/index.xml
+    type: media
+  - name: VentureBeat AI
+    url: https://venturebeat.com/category/ai/feed/
+    type: media
+  - name: Ars Technica AI
+    url: https://arstechnica.com/ai/feed/
+    type: media
+  - name: Wired AI
+    url: https://www.wired.com/feed/tag/ai/latest/rss
+    type: media
+  - name: MIT Technology Review
+    url: https://www.technologyreview.com/feed/
+    type: media
+
+  # Kuraterede nyhedsbreve
+  - name: TLDR AI
+    url: https://tldr.tech/api/rss/ai
+    type: newsletter
+
+hackernews:
+  enabled: true
+  min_points: 100
+  keywords:
+    - AI
+    - LLM
+    - GPT
+    - OpenAI
+    - Anthropic
+    - Claude
+    - Gemini
+    - DeepMind
+    - Mistral
+    - Llama
+    - Copilot
+    - Hugging Face
+    - machine learning
+    - chatbot
+
+# Bemærk: Reddit blokerer ofte datacenter-IP'er (403). Fejlen håndteres som en
+# advarsel, og resten af pipelinen kører videre. Slå fra hvis den fejler konstant.
+reddit:
+  enabled: true
+  min_score: 200
+  subreddits:
+    - MachineLearning
+    - LocalLLaMA
+    - artificial
