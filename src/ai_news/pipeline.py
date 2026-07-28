@@ -25,6 +25,7 @@ class RunStats:
     skipped_quiet: int = 0
     skipped_category: int = 0
     merged: int = 0
+    usage: llm.UsageTracker = field(default_factory=llm.UsageTracker)
     skipped_run: bool = False
     errors: list[str] = field(default_factory=list)
 
@@ -137,7 +138,7 @@ def _dedupe_candidates(
         return
 
     try:
-        groups = llm.find_duplicate_groups(client, cfg.scoring_model, candidates)
+        groups = llm.find_duplicate_groups(client, cfg.scoring_model, candidates, stats.usage)
     except Exception as exc:  # noqa: BLE001 - dedup må ikke vælte kørslen
         log.warning("Dedup af kandidater fejlede: %s", exc)
         stats.errors.append(f"dedupe: {exc}")
@@ -189,7 +190,7 @@ def _score_pending(
         articles = _cluster_articles(conn, row["id"])
         try:
             if client is not None:
-                result = llm.score_cluster(client, cfg.scoring_model, articles)
+                result = llm.score_cluster(client, cfg.scoring_model, articles, stats.usage)
             else:
                 result = llm.heuristic_score(articles)
         except Exception as exc:  # noqa: BLE001 - én fejlende scoring må ikke stoppe kørslen
@@ -265,7 +266,7 @@ def _notify_candidates(
         articles = _cluster_articles(conn, row["id"])
         try:
             if client is not None:
-                summary = llm.summarize_cluster(client, cfg.summary_model, articles)
+                summary = llm.summarize_cluster(client, cfg.summary_model, articles, stats.usage)
             else:
                 summary = llm.fallback_summary(articles)
         except Exception as exc:  # noqa: BLE001

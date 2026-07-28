@@ -125,6 +125,84 @@ HEURISTIC_CATEGORIES = [
 
 
 @dataclass
+class ModelUsage:
+    calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+
+
+class UsageTracker:
+    """Samler tokenforbrug pr. model, så en kørsel kan prissættes."""
+
+    def __init__(self) -> None:
+        self.by_model: dict[str, ModelUsage] = {}
+
+    def record(self, model: str, usage) -> None:
+        entry = self.by_model.setdefault(model, ModelUsage())
+        entry.calls += 1
+        entry.input_tokens += getattr(usage, "input_tokens", 0) or 0
+        entry.output_tokens += getattr(usage, "output_tokens", 0) or 0
+        entry.cache_read_tokens += getattr(usage, "cache_read_input_tokens", 0) or 0
+        entry.cache_write_tokens += getattr(usage, "cache_creation_input_tokens", 0) or 0
+
+    @property
+    def calls(self) -> int:
+        return sum(m.calls for m in self.by_model.values())
+
+    @property
+    def input_tokens(self) -> int:
+        return sum(m.input_tokens + m.cache_read_tokens + m.cache_write_tokens for m in self.by_model.values())
+
+    @property
+    def output_tokens(self) -> int:
+        return sum(m.output_tokens for m in self.by_model.values())
+
+    def cost_usd(self, prices: dict[str, dict[str, float]]) -> float:
+        """Estimeret pris i USD. Ukendte modeller tælles som 0 og markeres i rapporten."""
+        total = 0.0
+        for model, usage in self.by_model.items():
+            price = prices.get(model)
+            if not price:
+                continue
+            per_in = price.get("input", 0.0) / 1_000_000
+            per_out = price.get("output", 0.0) / 1_000_000
+            total += usage.input_tokens * per_in
+            total += usage.output_tokens * per_out
+            # Cache-læsning ~0,1x input, cache-skrivning ~1,25x input
+            total += usage.cache_read_tokens * per_in * 0.1
+            total += usage.cache_write_tokens * per_in * 1.25
+        return total
+
+    def report(self, prices: dict[str, dict[str, float]], dkk_per_usd: float = 0.0) -> list[str]:
+        if not self.by_model:
+            return ["LLM-forbrug: ingen API-kald i denne kørsel."]
+
+        lines = []
+        for model in sorted(self.by_model):
+            usage = self.by_model[model]
+            known = "" if model in prices else "  (ukendt pris)"
+            single = UsageTracker()
+            single.by_model[model] = usage
+            lines.append(
+                f"  {model:<20} {usage.calls:>4} kald  "
+                f"{usage.input_tokens:>8,} in  {usage.output_tokens:>7,} out  "
+                f"~{single.cost_usd(prices):.4f} USD{known}".replace(",", ".")
+            )
+
+        usd = self.cost_usd(prices)
+        total = (
+            f"LLM-forbrug i alt: {self.calls} kald | "
+            f"{self.input_tokens:,} input + {self.output_tokens:,} output tokens | "
+            f"~{usd:.4f} USD"
+        ).replace(",", ".")
+        if dkk_per_usd:
+            total += f" (~{usd * dkk_per_usd:.2f} DKK)"
+        return lines + [total]
+
+
+@dataclass
 class ScoreResult:
     overall: int
     company: str
@@ -180,7 +258,10 @@ duplicate, return an empty list."""
 
 
 def find_duplicate_groups(
-    client: anthropic.Anthropic, model: str, candidates: list[tuple[int, str]]
+    client: anthropic.Anthropic,
+    model: str,
+    candidates: list[tuple[int, str]],
+    usage: UsageTracker | None = None,
 ) -> list[list[int]]:
     """Find grupper af klynger der dækker samme begivenhed.
 
@@ -198,6 +279,8 @@ def find_duplicate_groups(
         output_config={"format": {"type": "json_schema", "schema": DEDUP_SCHEMA}},
         messages=[{"role": "user", "content": listing}],
     )
+    if usage is not None:
+        usage.record(model, response.usage)
     text = next(b.text for b in response.content if b.type == "text")
     data = json.loads(text)
 
@@ -231,7 +314,10 @@ def _cluster_text(articles: list[sqlite3.Row]) -> str:
 
 
 def score_cluster(
-    client: anthropic.Anthropic, model: str, articles: list[sqlite3.Row]
+    client: anthropic.Anthropic,
+    model: str,
+    articles: list[sqlite3.Row],
+    usage: UsageTracker | None = None,
 ) -> ScoreResult:
     response = client.messages.create(
         model=model,
@@ -240,6 +326,8 @@ def score_cluster(
         output_config={"format": {"type": "json_schema", "schema": SCORE_SCHEMA}},
         messages=[{"role": "user", "content": _cluster_text(articles)}],
     )
+    if usage is not None:
+        usage.record(model, response.usage)
     text = next(b.text for b in response.content if b.type == "text")
     data = json.loads(text)
     category = str(data.get("category", "industry"))
@@ -276,7 +364,10 @@ def heuristic_score(articles: list[sqlite3.Row]) -> ScoreResult:
 
 
 def summarize_cluster(
-    client: anthropic.Anthropic, model: str, articles: list[sqlite3.Row]
+    client: anthropic.Anthropic,
+    model: str,
+    articles: list[sqlite3.Row],
+    usage: UsageTracker | None = None,
 ) -> Summary:
     response = client.messages.create(
         model=model,
@@ -285,6 +376,8 @@ def summarize_cluster(
         output_config={"format": {"type": "json_schema", "schema": SUMMARY_SCHEMA}},
         messages=[{"role": "user", "content": _cluster_text(articles)}],
     )
+    if usage is not None:
+        usage.record(model, response.usage)
     text = next(b.text for b in response.content if b.type == "text")
     data = json.loads(text)
     return Summary(

@@ -145,6 +145,8 @@ def main(argv: list[str] | None = None) -> int:
         f"| lagt sammen: {stats.merged} | notificeret: {stats.notified} "
         f"| filtreret fra: {stats.skipped_category} | udskudt (stille): {stats.skipped_quiet}"
     )
+    for line in stats.usage.report(cfg.prices, cfg.dkk_per_usd):
+        print(line)
     if stats.errors:
         print(f"Fejl undervejs: {len(stats.errors)} (se log)", file=sys.stderr)
     return 0

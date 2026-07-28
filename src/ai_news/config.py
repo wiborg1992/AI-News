@@ -80,6 +80,8 @@ class Config:
     run_hours: list[int] = field(default_factory=list)
     scoring_model: str = "claude-haiku-4-5"
     summary_model: str = "claude-sonnet-5"
+    prices: dict[str, dict[str, float]] = field(default_factory=dict)
+    dkk_per_usd: float = 0.0
     feeds: list[Feed] = field(default_factory=list)
     hackernews: HackerNews = field(default_factory=HackerNews)
     reddit: Reddit = field(default_factory=Reddit)
@@ -133,6 +135,11 @@ def load_config(path: str | Path) -> Config:
         run_hours=[int(h) for h in schedule.get("run_hours", [])],
         scoring_model=llm.get("scoring_model", "claude-haiku-4-5"),
         summary_model=llm.get("summary_model", "claude-sonnet-5"),
+        prices={
+            str(model): {str(k): float(v) for k, v in (rates or {}).items()}
+            for model, rates in (llm.get("prices") or {}).items()
+        },
+        dkk_per_usd=float(llm.get("dkk_per_usd", 0.0)),
         feeds=[Feed(name=f["name"], url=f["url"], type=f.get("type", "media")) for f in raw.get("feeds", [])],
         hackernews=HackerNews(
             enabled=bool(hn.get("enabled", True)),

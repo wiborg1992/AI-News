@@ -40,6 +40,19 @@ quiet_hours:      # lokal tid; breaking (score >= breaking_score) sendes alligev
 llm:
   scoring_model: claude-haiku-4-5
   summary_model: claude-sonnet-5
+  # USD pr. million tokens. Bruges KUN til omkostningsestimatet i loggen —
+  # den rigtige regning er den, Anthropic sender. Tjek priserne på
+  # platform.claude.com/docs/en/pricing hvis estimatet ser forkert ud.
+  # Bemærk: Sonnet 5 har intropris ($2/$10) frem til 2026-08-31, derefter $3/$15.
+  prices:
+    claude-haiku-4-5:
+      input: 1.00
+      output: 5.00
+    claude-sonnet-5:
+      input: 2.00
+      output: 10.00
+  # Omtrentlig vekselkurs, kun til visning. Sæt til 0 for at skjule DKK.
+  dkk_per_usd: 7.0
 
 # Sortering: hvad der er værd at blive forstyrret af.
 # Hver klynge kategoriseres af LLM'en, og kategorien afgør tærsklen.
