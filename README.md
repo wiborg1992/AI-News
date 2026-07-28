@@ -6,7 +6,7 @@ Se [PLAN.md](PLAN.md) for arkitektur og faseplan.
 
 ## Sådan virker det
 
-1. **Ingestion** — henter RSS-feeds (OpenAI, DeepMind, TechCrunch, TLDR AI m.fl.), Hacker News (Algolia API) og Reddit hvert 15. minut.
+1. **Ingestion** — henter RSS-feeds (OpenAI, DeepMind, TechCrunch, TLDR AI m.fl.), Hacker News (Algolia API) og Reddit kl. 12 og 22 dansk tid.
 2. **Dedup & klyngedannelse** — samme historie fra flere kilder samles i én klynge (URL-kanonisering + fuzzy titelmatch).
 3. **Krydstjek** — en klynge er *bekræftet* ved ≥2 uafhængige kilder eller en førstehåndskilde (firma-blog). Ellers markeres den "🔶 ubekræftet".
 4. **Scoring** — Claude Haiku scorer 0-10 på banebrydende + IT-relevans. Kun score ≥ 7 (konfigurerbart) går videre.
@@ -66,7 +66,7 @@ export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/..."
 python -m ai_news test-notify
 ```
 
-### 2. GitHub Actions (kører automatisk hvert 15. minut)
+### 2. GitHub Actions (kører automatisk kl. 12 og 22)
 
 Tilføj secrets under **Settings → Secrets and variables → Actions** — kun for den kanal du bruger:
 
@@ -79,7 +79,11 @@ Tilføj secrets under **Settings → Secrets and variables → Actions** — kun
 | `PUSHOVER_TOKEN`, `PUSHOVER_USER` | *(hvis du bruger Pushover)* |
 | `DISCORD_WEBHOOK_URL` | *(hvis du bruger Discord)* |
 
-Workflowet ([.github/workflows/aggregate.yml](.github/workflows/aggregate.yml)) kører derefter selv. Det kan også startes manuelt under **Actions → AI News Aggregator → Run workflow** (med valgfri dry-run).
+Workflowet ([.github/workflows/aggregate.yml](.github/workflows/aggregate.yml)) kører derefter selv. Det kan også startes manuelt under **Actions → AI News Aggregator → Run workflow** (med valgfri dry-run) — manuelle kørsler ignorerer tidsplanen.
+
+**Om tidsplanen og sommertid.** GitHub Actions cron kører altid i UTC, mens Danmark skifter mellem UTC+2 og UTC+1. Workflowet vækkes derfor på fire UTC-tidspunkter (10, 11, 20, 21), og pipelinen tjekker selv den lokale time mod `schedule.run_hours` i `config.yaml`. De to "forkerte" vækninger afsluttes med det samme uden at hente noget, så du rammer 12:00 og 22:00 dansk tid præcist hele året — også hen over sommertidsskiftet.
+
+Vil du have andre tidspunkter, skal **begge** steder rettes: `run_hours` i `config.yaml` (lokale timer) og `cron` i workflowet (de tilsvarende UTC-timer, både sommer og vinter).
 
 > Bemærk: GitHub Actions cron kan drifte 5-15 min — acceptabelt til formålet. Databasen gemmes mellem kørsler via Actions cache; ryddes cachen, starter historikken forfra (du får højst lidt dublet-støj i én kørsel).
 
@@ -101,7 +105,7 @@ CLI-kommandoer:
 
 | Kommando | Formål |
 |---|---|
-| `run` | Kør pipelinen (`--dry-run`, `--no-llm`) |
+| `run` | Kør pipelinen (`--dry-run`, `--no-llm`, `--force`) |
 | `ntfy-setup` | Foreslå et tilfældigt ntfy-emnenavn |
 | `telegram-setup` | Vis chat_id'er der har skrevet til botten |
 | `test-notify` | Send en testbesked via den valgte kanal |

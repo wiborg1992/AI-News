@@ -131,7 +131,7 @@ Beslutningen om X-API tages først, når vi kan måle hvad den indirekte dæknin
 | LLM | Claude Haiku (scoring) + Claude Sonnet (resuméer) | Pris/kvalitet matcher opgaverne |
 | Database | SQLite | Ingen driftsbyrde |
 | Push | ntfy / Telegram / Pushover / Discord (udskiftelig) | Gratis muligheder, push på iOS/Android, ingen låsning til én udbyder |
-| Kørsel | GitHub Actions cron (start) → lille VPS/Fly.io (hvis <15 min-interval eller mere kontrol ønskes) | Gratis at starte; Actions-cron kan dog drifte 5-15 min |
+| Kørsel | GitHub Actions cron, kl. 12 og 22 dansk tid (sommertid håndteres i koden) | Gratis; Actions-cron kan drifte 5-15 min |
 | Konfiguration | `config.yaml` (kilder, tærskler, stilletider) + secrets i miljøvariabler | Nemt at justere uden kodeændringer |
 
 **Estimerede driftsomkostninger:** 0 kr. for infrastruktur (GitHub Actions + ntfy/Telegram) + LLM-forbrug skønnet **1-5 USD/md** (Haiku-scoring af ~50-150 klynger/dag + få Sonnet-resuméer). X API er eneste potentielt dyre tilkøb.

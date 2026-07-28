@@ -4,6 +4,13 @@
 timezone: Europe/Copenhagen
 language: da
 
+schedule:
+  # Lokale timer hvor pipelinen rent faktisk kører. GitHub Actions cron er
+  # altid UTC, så workflowet vækkes på begge mulige UTC-tidspunkter (sommer-
+  # og vintertid) og kører kun videre, hvis den lokale time står her.
+  # Tom liste = kør uanset tidspunkt.
+  run_hours: [12, 22]
+
 notifications:
   # auto = brug den første kanal der har sine secrets sat
   # (rækkefølge: ntfy -> telegram -> pushover -> discord)

@@ -43,6 +43,7 @@ class Config:
     title_match_threshold: int = 87
     quiet_start: int = 23
     quiet_end: int = 7
+    run_hours: list[int] = field(default_factory=list)
     scoring_model: str = "claude-haiku-4-5"
     summary_model: str = "claude-sonnet-5"
     feeds: list[Feed] = field(default_factory=list)
@@ -74,6 +75,7 @@ def load_config(path: str | Path) -> Config:
     reddit = raw.get("reddit", {})
     notifications = raw.get("notifications", {})
     ntfy = notifications.get("ntfy", {})
+    schedule = raw.get("schedule", {})
 
     return Config(
         timezone=raw.get("timezone", "Europe/Copenhagen"),
@@ -87,6 +89,7 @@ def load_config(path: str | Path) -> Config:
         title_match_threshold=int(limits.get("title_match_threshold", 87)),
         quiet_start=int(quiet.get("start", 23)),
         quiet_end=int(quiet.get("end", 7)),
+        run_hours=[int(h) for h in schedule.get("run_hours", [])],
         scoring_model=llm.get("scoring_model", "claude-haiku-4-5"),
         summary_model=llm.get("summary_model", "claude-sonnet-5"),
         feeds=[Feed(name=f["name"], url=f["url"], type=f.get("type", "media")) for f in raw.get("feeds", [])],

@@ -23,6 +23,7 @@ class RunStats:
     scored: int = 0
     notified: int = 0
     skipped_quiet: int = 0
+    skipped_run: bool = False
     errors: list[str] = field(default_factory=list)
 
 
@@ -165,9 +166,29 @@ def _notify_candidates(
         stats.notified += 1
 
 
-def run(cfg: Config, conn: sqlite3.Connection, *, dry_run: bool = False, use_llm: bool = True) -> RunStats:
+def run(
+    cfg: Config,
+    conn: sqlite3.Connection,
+    *,
+    dry_run: bool = False,
+    use_llm: bool = True,
+    force: bool = False,
+) -> RunStats:
     stats = RunStats()
     now = datetime.now(timezone.utc)
+
+    # GitHub Actions cron kører i UTC, så workflowet vækkes på begge mulige
+    # UTC-tidspunkter for sommer- og vintertid. Her afgøres, om det er den
+    # rigtige lokale time — ellers afsluttes uden at hente noget.
+    local_hour = now.astimezone(ZoneInfo(cfg.timezone)).hour
+    if cfg.run_hours and not force and local_hour not in cfg.run_hours:
+        log.info(
+            "Kl. %02d lokalt er ikke et planlagt kørselstidspunkt (%s) — springer over.",
+            local_hour,
+            ", ".join(f"{h:02d}" for h in cfg.run_hours),
+        )
+        stats.skipped_run = True
+        return stats
 
     articles = ingest.fetch_all(cfg)
     stats.fetched = len(articles)

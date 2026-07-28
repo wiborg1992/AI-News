@@ -22,6 +22,11 @@ def main(argv: list[str] | None = None) -> int:
     run_parser = sub.add_parser("run", help="Kør hele pipelinen (standard)")
     run_parser.add_argument("--dry-run", action="store_true", help="Udskriv notifikationer i stedet for at sende")
     run_parser.add_argument("--no-llm", action="store_true", help="Brug heuristisk scoring uden Claude API")
+    run_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Kør uanset schedule.run_hours (bruges ved manuel start)",
+    )
     sub.add_parser("telegram-setup", help="Vis chat_id'er der har skrevet til Telegram-botten")
     sub.add_parser("ntfy-setup", help="Foreslå et tilfældigt ntfy-emnenavn")
     test_parser = sub.add_parser("test-notify", help="Send en testbesked via den valgte kanal")
@@ -87,9 +92,14 @@ def main(argv: list[str] | None = None) -> int:
             conn,
             dry_run=getattr(args, "dry_run", False),
             use_llm=not getattr(args, "no_llm", False),
+            force=getattr(args, "force", False),
         )
     finally:
         conn.close()
+
+    if stats.skipped_run:
+        print("Sprunget over — ikke et planlagt kørselstidspunkt (brug --force for at tvinge).")
+        return 0
 
     print(
         f"Hentet: {stats.fetched} | nye: {stats.new_articles} | scoret: {stats.scored} "

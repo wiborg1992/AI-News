@@ -1,8 +1,14 @@
 name: AI News Aggregator
 
 on:
+  # Cron er ALTID UTC. Vi vil køre kl. 12 og 22 dansk tid, men Danmark skifter
+  # mellem UTC+2 (sommer) og UTC+1 (vinter). Derfor vækkes workflowet på begge
+  # mulige UTC-tidspunkter, og pipelinen afgør selv ud fra schedule.run_hours
+  # i config.yaml, om det er den rigtige lokale time — resten afsluttes straks.
+  #   10:00 UTC = 12:00 sommertid | 11:00 UTC = 12:00 vintertid
+  #   20:00 UTC = 22:00 sommertid | 21:00 UTC = 22:00 vintertid
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "0 10,11,20,21 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -22,9 +28,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -35,13 +41,15 @@ jobs:
       # Databasen gemmes mellem kørsler via Actions cache. restore-keys uden
       # run_id matcher den nyeste tidligere kørsel.
       - name: Restore database
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: data/ai_news.db
           key: ai-news-db-${{ github.run_id }}
           restore-keys: |
             ai-news-db-
 
+      # Manuel start kører altid (--force); planlagte kørsler respekterer
+      # schedule.run_hours, så de to "forkerte" UTC-vækninger afsluttes straks.
       - name: Run pipeline
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -55,11 +63,13 @@ jobs:
           PUSHOVER_USER: ${{ secrets.PUSHOVER_USER }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          python -m ai_news run ${{ inputs.dry_run == true && '--dry-run' || '' }}
+          python -m ai_news run \
+            ${{ github.event_name == 'workflow_dispatch' && '--force' || '' }} \
+            ${{ inputs.dry_run == true && '--dry-run' || '' }}
 
       - name: Save database
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: data/ai_news.db
           key: ai-news-db-${{ github.run_id }}
