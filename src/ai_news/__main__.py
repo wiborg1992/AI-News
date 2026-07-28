@@ -27,6 +27,14 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Kør uanset schedule.run_hours (bruges ved manuel start)",
     )
+    reset_parser = sub.add_parser(
+        "reset", help="Nulstil sende-historik, så historier kan sendes igen"
+    )
+    reset_parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Slet også alle artikler og klynger (helt frisk start)",
+    )
     sub.add_parser("telegram-setup", help="Vis chat_id'er der har skrevet til Telegram-botten")
     sub.add_parser("ntfy-setup", help="Foreslå et tilfældigt ntfy-emnenavn")
     test_parser = sub.add_parser("test-notify", help="Send en testbesked via den valgte kanal")
@@ -47,6 +55,23 @@ def main(argv: list[str] | None = None) -> int:
             print("Sæt TELEGRAM_BOT_TOKEN først (token fra @BotFather).", file=sys.stderr)
             return 1
         notify.print_chat_ids(token)
+        return 0
+
+    if command == "reset":
+        conn = db.connect(args.db)
+        try:
+            if args.all:
+                conn.execute("DELETE FROM notifications")
+                conn.execute("DELETE FROM articles")
+                conn.execute("DELETE FROM clusters")
+                print("Databasen er tømt — næste kørsel starter forfra.")
+            else:
+                conn.execute("DELETE FROM notifications")
+                conn.execute("UPDATE clusters SET notified_at = NULL")
+                print("Sende-historik nulstillet — kvoten er fri, og historier kan sendes igen.")
+            conn.commit()
+        finally:
+            conn.close()
         return 0
 
     if command == "ntfy-setup":

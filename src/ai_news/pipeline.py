@@ -139,6 +139,7 @@ def _notify_candidates(
     client: anthropic.Anthropic | None,
     notifier,
     stats: RunStats,
+    dry_run: bool = False,
 ) -> None:
     now_utc = datetime.now(timezone.utc)
     tz = ZoneInfo(cfg.timezone)
@@ -195,13 +196,17 @@ def _notify_candidates(
             stats.errors.append(f"send cluster {row['id']}: {exc}")
             continue
 
-        sent_at = datetime.now(timezone.utc).isoformat()
-        conn.execute(
-            "INSERT INTO notifications (cluster_id, channel, message, sent_at) VALUES (?, ?, ?, ?)",
-            (row["id"], notifier.channel, note.plain(), sent_at),
-        )
-        conn.execute("UPDATE clusters SET notified_at = ? WHERE id = ?", (sent_at, row["id"]))
-        conn.commit()
+        # En tørkørsel må ikke ændre tilstand: den skal hverken bruge af
+        # dagens kvote eller markere historier som sendt, så den kan gentages
+        # og de rigtige notifikationer stadig når frem bagefter.
+        if not dry_run:
+            sent_at = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                "INSERT INTO notifications (cluster_id, channel, message, sent_at) VALUES (?, ?, ?, ?)",
+                (row["id"], notifier.channel, note.plain(), sent_at),
+            )
+            conn.execute("UPDATE clusters SET notified_at = ? WHERE id = ?", (sent_at, row["id"]))
+            conn.commit()
         sent_today += 1
         stats.notified += 1
 
@@ -247,5 +252,5 @@ def run(
 
     notifier = notify.build_notifier(cfg, dry_run=dry_run)
 
-    _notify_candidates(conn, cfg, client, notifier, stats)
+    _notify_candidates(conn, cfg, client, notifier, stats, dry_run=dry_run)
     return stats

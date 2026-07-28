@@ -96,7 +96,10 @@ Tilføj secrets under **Settings → Secrets and variables → Actions** — kun
 | `PUSHOVER_TOKEN`, `PUSHOVER_USER` | *(hvis du bruger Pushover)* |
 | `DISCORD_WEBHOOK_URL` | *(hvis du bruger Discord)* |
 
-Workflowet ([.github/workflows/aggregate.yml](.github/workflows/aggregate.yml)) kører derefter selv. Det kan også startes manuelt under **Actions → AI News Aggregator → Run workflow** (med valgfri dry-run) — manuelle kørsler ignorerer tidsplanen.
+Workflowet ([.github/workflows/aggregate.yml](.github/workflows/aggregate.yml)) kører derefter selv. Det kan også startes manuelt under **Actions → AI News Aggregator → Run workflow** — manuelle kørsler ignorerer tidsplanen. To valgfrie flueben:
+
+- **Dry-run** — udskriver i loggen i stedet for at sende. Ændrer ingen tilstand: bruger ikke af dagens kvote og markerer ikke historier som sendt, så den kan gentages, og de rigtige notifikationer når stadig frem bagefter.
+- **Reset** — nulstiller sende-historikken først, så allerede sendte historier kan sendes igen og dagens kvote frigøres.
 
 **Om tidsplanen og sommertid.** GitHub Actions cron kører altid i UTC, mens Danmark skifter mellem UTC+2 og UTC+1. Workflowet vækkes derfor på otte UTC-tidspunkter (6, 7, 10, 11, 15, 16, 20, 21), og pipelinen tjekker selv den lokale time mod `schedule.run_hours` i `config.yaml`. De fire "forkerte" vækninger afsluttes med det samme uden at hente noget, så du rammer 8, 12, 17 og 22 dansk tid præcist hele året — også hen over sommertidsskiftet.
 
@@ -123,6 +126,7 @@ CLI-kommandoer:
 | Kommando | Formål |
 |---|---|
 | `run` | Kør pipelinen (`--dry-run`, `--no-llm`, `--force`) |
+| `reset` | Nulstil sende-historik (`--all` tømmer hele databasen) |
 | `ntfy-setup` | Foreslå et tilfældigt ntfy-emnenavn |
 | `telegram-setup` | Vis chat_id'er der har skrevet til botten |
 | `test-notify` | Send en testbesked via den valgte kanal |
