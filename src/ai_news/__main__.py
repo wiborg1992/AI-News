@@ -31,6 +31,11 @@ def main(argv: list[str] | None = None) -> int:
         "reset", help="Nulstil sende-historik, så historier kan sendes igen"
     )
     reset_parser.add_argument(
+        "--scores",
+        action="store_true",
+        help="Ryd også scores og kategorier, så alt vurderes forfra af LLM'en",
+    )
+    reset_parser.add_argument(
         "--all",
         action="store_true",
         help="Slet også alle artikler og klynger (helt frisk start)",
@@ -60,13 +65,22 @@ def main(argv: list[str] | None = None) -> int:
     if command == "reset":
         conn = db.connect(args.db)
         try:
+            conn.execute("DELETE FROM notifications")
             if args.all:
-                conn.execute("DELETE FROM notifications")
                 conn.execute("DELETE FROM articles")
                 conn.execute("DELETE FROM clusters")
                 print("Databasen er tømt — næste kørsel starter forfra.")
+            elif args.scores:
+                conn.execute(
+                    """UPDATE clusters
+                       SET notified_at = NULL, score = NULL, category = NULL,
+                           score_reason = NULL, scored_source_count = 0"""
+                )
+                print(
+                    "Sende-historik OG scores nulstillet — næste kørsel lader LLM'en "
+                    "vurdere og kategorisere alt forfra."
+                )
             else:
-                conn.execute("DELETE FROM notifications")
                 conn.execute("UPDATE clusters SET notified_at = NULL")
                 print("Sende-historik nulstillet — kvoten er fri, og historier kan sendes igen.")
             conn.commit()

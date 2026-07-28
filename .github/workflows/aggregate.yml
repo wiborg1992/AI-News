@@ -20,6 +20,10 @@ on:
         description: "Nulstil sende-historik først (frigør dagens kvote)"
         type: boolean
         default: false
+      rescore:
+        description: "Score og kategorisér alt forfra med LLM'en (bruger flere API-kald)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -70,7 +74,9 @@ jobs:
           PUSHOVER_USER: ${{ secrets.PUSHOVER_USER }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          if [ "${{ inputs.reset }}" = "true" ]; then
+          if [ "${{ inputs.rescore }}" = "true" ]; then
+            python -m ai_news reset --scores
+          elif [ "${{ inputs.reset }}" = "true" ]; then
             python -m ai_news reset
           fi
           python -m ai_news run \
