@@ -58,6 +58,32 @@ def build_notification(
     )
 
 
+def build_digest(notes: list[Notification]) -> Notification:
+    """Saml flere historier i én besked.
+
+    Med fire daglige kørsler kommer nyhederne i klumper; ti separate
+    notifikationer på én gang er værre end én samlet oversigt.
+    """
+    if len(notes) == 1:
+        return notes[0]
+
+    top_score = max(n.score for n in notes)
+    emoji = "🚨" if top_score >= 9 else "🤖"
+    lines = []
+    for i, note in enumerate(notes, 1):
+        # Fjern statusparentesen fra overskriften — den fylder for meget her
+        headline = re.sub(r"\s*\((?:🔶 )?(?:bekræftet|ubekræftet|førstehåndskilde)[^)]*\)\s*$", "", note.title)
+        headline = re.sub(r"^[🚨🤖]\s*", "", headline)
+        lines.append(f"{i}. {headline}\n   {note.link}")
+
+    return Notification(
+        title=f"{emoji} {len(notes)} AI-nyheder",
+        body="\n\n".join(lines),
+        link=notes[0].link,
+        score=top_score,
+    )
+
+
 class ConsoleNotifier:
     """Bruges til dry-run og som fallback når intet er konfigureret."""
 

@@ -16,6 +16,9 @@ notifications:
   # (rækkefølge: ntfy -> telegram -> pushover -> discord)
   # Sæt eksplicit til: ntfy | telegram | pushover | discord | console
   channel: auto
+  # true = én samlet besked med alle historier fra kørslen.
+  # false = én besked pr. historie.
+  digest: true
   ntfy:
     server: https://ntfy.sh
     # topic sættes via NTFY_TOPIC — emnenavnet er reelt din adgangsnøgle

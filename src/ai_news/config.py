@@ -92,6 +92,7 @@ class Config:
     # Notifikationskanal: auto | ntfy | telegram | pushover | discord | console
     notify_channel: str = "auto"
     ntfy_server: str = "https://ntfy.sh"
+    digest: bool = False
 
     # Secrets fra miljøet
     anthropic_api_key: str | None = None
@@ -174,6 +175,7 @@ def load_config(path: str | Path) -> Config:
             },
         ),
         notify_channel=notifications.get("channel", "auto"),
+        digest=bool(notifications.get("digest", False)),
         ntfy_server=os.environ.get("NTFY_SERVER") or ntfy.get("server", "https://ntfy.sh"),
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
         x_bearer_token=os.environ.get("X_BEARER_TOKEN"),

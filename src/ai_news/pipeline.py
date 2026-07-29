@@ -293,11 +293,13 @@ def _notify_candidates(
         (min_created,),
     ).fetchall()
 
+    # Byg først alle beskeder, så digest-tilstand kan samle dem bagefter.
+    pending: list[tuple[sqlite3.Row, notify.Notification]] = []
     for row in candidates:
         if not passes_filter(row["score"], row["category"], cfg.filtering, cfg.notify_score):
             stats.skipped_category += 1
             continue
-        if sent_today >= cfg.max_notifications_per_day:
+        if sent_today + len(pending) >= cfg.max_notifications_per_day:
             log.info("Dagligt loft nået (%d) — resten venter.", cfg.max_notifications_per_day)
             break
         score = effective_score(row["score"], row["category"], cfg.filtering)
@@ -316,29 +318,41 @@ def _notify_candidates(
             summary = llm.fallback_summary(articles)
 
         confirmed = is_confirmed(row["n_sources"], bool(row["has_first_party"]))
-        note = notify.build_notification(
-            summary, articles[0]["url"], row["n_sources"], confirmed, score
+        pending.append(
+            (
+                row,
+                notify.build_notification(
+                    summary, articles[0]["url"], row["n_sources"], confirmed, score
+                ),
+            )
         )
-        try:
-            notifier.send(note)
-        except Exception as exc:  # noqa: BLE001
-            log.error("Afsendelse for klynge %s fejlede: %s", row["id"], exc)
-            stats.errors.append(f"send cluster {row['id']}: {exc}")
-            continue
 
-        # En tørkørsel må ikke ændre tilstand: den skal hverken bruge af
-        # dagens kvote eller markere historier som sendt, så den kan gentages
-        # og de rigtige notifikationer stadig når frem bagefter.
-        if not dry_run:
-            sent_at = datetime.now(timezone.utc).isoformat()
+    if not pending:
+        return
+
+    notes = [note for _, note in pending]
+    messages = [notify.build_digest(notes)] if cfg.digest else notes
+    try:
+        for message in messages:
+            notifier.send(message)
+    except Exception as exc:  # noqa: BLE001
+        log.error("Afsendelse fejlede: %s", exc)
+        stats.errors.append(f"send: {exc}")
+        return
+
+    # En tørkørsel må ikke ændre tilstand: den skal hverken bruge af dagens
+    # kvote eller markere historier som sendt, så den kan gentages og de
+    # rigtige notifikationer stadig når frem bagefter.
+    if not dry_run:
+        sent_at = datetime.now(timezone.utc).isoformat()
+        for row, note in pending:
             conn.execute(
                 "INSERT INTO notifications (cluster_id, channel, message, sent_at) VALUES (?, ?, ?, ?)",
                 (row["id"], notifier.channel, note.plain(), sent_at),
             )
             conn.execute("UPDATE clusters SET notified_at = ? WHERE id = ?", (sent_at, row["id"]))
-            conn.commit()
-        sent_today += 1
-        stats.notified += 1
+        conn.commit()
+    stats.notified += len(pending)
 
 
 def run(
