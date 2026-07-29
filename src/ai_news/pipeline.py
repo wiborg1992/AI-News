@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 import anthropic
 
-from . import dedup, ingest, llm, notify
+from . import db, dedup, ingest, llm, notify
 from .config import Config
 
 log = logging.getLogger(__name__)
@@ -28,6 +28,48 @@ class RunStats:
     usage: llm.UsageTracker = field(default_factory=llm.UsageTracker)
     skipped_run: bool = False
     errors: list[str] = field(default_factory=list)
+
+
+LAST_RUN_KEY = "last_run_at"
+
+
+def last_scheduled_slot(now_local: datetime, run_hours: list[int]) -> datetime | None:
+    """Seneste planlagte tidspunkt der allerede er passeret (lokal tid)."""
+    if not run_hours:
+        return None
+    slots = [
+        datetime.combine((now_local + timedelta(days=offset)).date(), time(hour=h), tzinfo=now_local.tzinfo)
+        for offset in (0, -1)
+        for h in run_hours
+    ]
+    passed = [s for s in slots if s <= now_local]
+    return max(passed) if passed else None
+
+
+def is_run_due(conn: sqlite3.Connection, cfg: Config, now_utc: datetime) -> tuple[bool, str]:
+    """Skal pipelinen arbejde nu?
+
+    I stedet for at kræve at cron rammer præcis den rigtige time, spørger vi:
+    er der passeret et planlagt tidspunkt, som vi endnu ikke har betjent?
+    GitHubs cron er 'best effort' og dropper jævnligt kørsler helt, så uden
+    denne fangst-op ville et droppet klokkeslæt betyde ingen nyheder den dag.
+    """
+    if not cfg.run_hours:
+        return True, "ingen faste tidspunkter — kører altid"
+
+    now_local = now_utc.astimezone(ZoneInfo(cfg.timezone))
+    slot = last_scheduled_slot(now_local, cfg.run_hours)
+    if slot is None:
+        return False, "intet planlagt tidspunkt er passeret endnu"
+
+    last = db.get_state(conn, LAST_RUN_KEY)
+    if last is None:
+        return True, "første kørsel"
+
+    last_utc = datetime.fromisoformat(last)
+    if last_utc < slot.astimezone(timezone.utc):
+        return True, f"kørslen kl. {slot:%H:%M} er ikke betjent endnu"
+    return False, f"kl. {slot:%H:%M} er allerede betjent ({last_utc.astimezone(now_local.tzinfo):%H:%M})"
 
 
 def in_quiet_hours(hour: int, start: int, end: int) -> bool:
@@ -310,18 +352,14 @@ def run(
     stats = RunStats()
     now = datetime.now(timezone.utc)
 
-    # GitHub Actions cron kører i UTC, så workflowet vækkes på begge mulige
-    # UTC-tidspunkter for sommer- og vintertid. Her afgøres, om det er den
-    # rigtige lokale time — ellers afsluttes uden at hente noget.
-    local_hour = now.astimezone(ZoneInfo(cfg.timezone)).hour
-    if cfg.run_hours and not force and local_hour not in cfg.run_hours:
-        log.info(
-            "Kl. %02d lokalt er ikke et planlagt kørselstidspunkt (%s) — springer over.",
-            local_hour,
-            ", ".join(f"{h:02d}" for h in cfg.run_hours),
-        )
-        stats.skipped_run = True
-        return stats
+    # Cron vækker os hver time; her afgøres om der faktisk er arbejde at gøre.
+    if not force:
+        due, reason = is_run_due(conn, cfg, now)
+        if not due:
+            log.info("Springer over: %s.", reason)
+            stats.skipped_run = True
+            return stats
+        log.info("Kører: %s.", reason)
 
     articles = ingest.fetch_all(cfg)
     stats.fetched = len(articles)
@@ -342,4 +380,9 @@ def run(
     notifier = notify.build_notifier(cfg, dry_run=dry_run)
 
     _notify_candidates(conn, cfg, client, notifier, stats, dry_run=dry_run)
+
+    # Kun rigtige kørsler kvitterer for tidspunktet, så en tørkørsel ikke
+    # æder den planlagte kørsel.
+    if not dry_run:
+        db.set_state(conn, LAST_RUN_KEY, datetime.now(timezone.utc).isoformat())
     return stats

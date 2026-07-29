@@ -1,15 +1,17 @@
 name: AI News Aggregator
 
 on:
-  # Cron er ALTID UTC. Vi vil køre kl. 8, 12, 17 og 22 dansk tid, men Danmark
-  # skifter mellem UTC+2 (sommer) og UTC+1 (vinter). Derfor vækkes workflowet på
-  # begge mulige UTC-tidspunkter for hver ønsket lokal time, og pipelinen afgør
-  # selv ud fra schedule.run_hours i config.yaml, om det er den rigtige lokale
-  # time — de fire "forkerte" vækninger afsluttes straks uden at hente noget.
-  #   06/07 UTC = 08 lokal | 10/11 UTC = 12 lokal
-  #   15/16 UTC = 17 lokal | 20/21 UTC = 22 lokal
+  # Vækkes hver time. Pipelinen afgør selv, om et af de planlagte tidspunkter
+  # i schedule.run_hours (config.yaml, lokal tid) er passeret uden at være
+  # betjent — ellers afsluttes den straks uden at hente noget.
+  #
+  # Hvorfor hver time og ikke kun på de fire tidspunkter: GitHubs cron er
+  # "best effort" og dropper jævnligt kørsler helt ved travlhed. Rammer vi kun
+  # præcise klokkeslæt, betyder én droppet kørsel ingen nyheder den dag. Med
+  # timevis vækning og fangst-op hentes en misset kørsel ind af den næste.
+  # Det håndterer også sommertid uden særlige UTC-timer.
   schedule:
-    - cron: "0 6,7,10,11,15,16,20,21 * * *"
+    - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:

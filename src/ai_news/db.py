@@ -43,7 +43,27 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 
 CREATE INDEX IF NOT EXISTS idx_notifications_sent ON notifications(sent_at);
+
+-- Nøgle/værdi til driftstilstand, fx hvornår pipelinen sidst kørte.
+CREATE TABLE IF NOT EXISTS state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
+
+
+def get_state(conn: sqlite3.Connection, key: str) -> str | None:
+    row = conn.execute("SELECT value FROM state WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def set_state(conn: sqlite3.Connection, key: str, value: str) -> None:
+    conn.execute(
+        "INSERT INTO state (key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, value),
+    )
+    conn.commit()
 
 
 # Kolonner tilføjet efter første udgivelse. Databasen genbruges mellem
